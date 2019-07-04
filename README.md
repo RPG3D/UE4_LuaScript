@@ -1,0 +1,2 @@
+# LuaScript
+Simple Is Power
