@@ -221,7 +221,7 @@ void FUnrealMisc::FetchProperty(lua_State* InL, const UProperty* InProp, void* I
 		FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, InStackIndex);
 		if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Delegate && Wrapper->DelegateInst && Wrapper->bIsMulti)
 		{
-			MultiDelegateProp->SetPropertyValue_InContainer(InBuff, *(FMulticastScriptDelegate*)Wrapper->DelegateInst);
+			MultiDelegateProp->SetMulticastDelegate(InBuff, *(FMulticastScriptDelegate*)Wrapper->DelegateInst);
 		}
 	}
 	else if (const UArrayProperty* ArrayProp = Cast<UArrayProperty>(InProp))
@@ -394,7 +394,7 @@ void FUnrealMisc::PushDelegate(lua_State* InL, void* InDelegateProperty, void* I
 	}
 	else
 	{
-		FMulticastScriptDelegate* Delegate = ((UMulticastDelegateProperty*)InDelegateProperty)->GetPropertyValuePtr_InContainer(InBuff);
+		FMulticastScriptDelegate* Delegate = ((UMulticastDelegateProperty*)InDelegateProperty)->ContainerPtrToValuePtr<FMulticastScriptDelegate>(InBuff);
 		if (Delegate)
 		{
 			FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
@@ -712,7 +712,7 @@ int FUnrealMisc::LuaUnbindDelegate(lua_State* InL)
 	bool bIsMulti = false;
 	UDelegateCallLua* FuncObj = nullptr;
 	bool bRemoveAll = true;
-	void* DelegateInst = nullptr;
+	const void* DelegateInst = nullptr;
 
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
 	FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(InL, -1);
