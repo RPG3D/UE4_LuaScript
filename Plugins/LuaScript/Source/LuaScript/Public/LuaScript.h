@@ -21,6 +21,8 @@ protected:
 
 #if WITH_EDITOR
 	void AddMenuExtension(class FMenuBuilder& InBuilder);
+
+	TSharedPtr<class FLuaUnrealWrapper> EditorLuaWrapper;
 #endif
 
 	TSharedPtr<class FUICommandList> LuaScriptCmdList = nullptr;

@@ -30,9 +30,9 @@ FLuaUnrealWrapper::~FLuaUnrealWrapper()
 	Reset();
 }
 
-FLuaUnrealWrapper* FLuaUnrealWrapper::Create(class UGameInstance* InGameInstance, const FString& InName)
+TSharedPtr<FLuaUnrealWrapper> FLuaUnrealWrapper::Create(class UGameInstance* InGameInstance, const FString& InName)
 {
-	FLuaUnrealWrapper* Inst = new FLuaUnrealWrapper();
+	TSharedPtr<FLuaUnrealWrapper> Inst(new FLuaUnrealWrapper());
 	if (InName.Len())
 	{
 		Inst->LuaStateName = InName;
@@ -279,10 +279,10 @@ bool FLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 	return true;
 }
 
-void FLuaUnrealWrapper::RunMainFunction()
+void FLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString("ApplicationMain")*/)
 {
 	//load entry lua
-	FString LoadMainScript = FString("require ('ApplicationMain')");
+	FString LoadMainScript = FString::Printf(TEXT("require('%s')"), *InMainFile);
 	int32 Ret = luaL_dostring(GetLuaSate(), TCHAR_TO_UTF8(*LoadMainScript));
 	if (Ret > 0)
 	{

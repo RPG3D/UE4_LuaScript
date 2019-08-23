@@ -17,7 +17,7 @@ public:
 	~FLuaUnrealWrapper();
 
 	//lua state run on server
-	static FLuaUnrealWrapper* Create(class UGameInstance* InGameInstance = nullptr, const FString& InName = FString(""));
+	static TSharedPtr<FLuaUnrealWrapper> Create(class UGameInstance* InGameInstance = nullptr, const FString& InName = FString(""));
 
 	//re-live
 	void Init(class UGameInstance* InGameInstance = nullptr);
@@ -34,7 +34,7 @@ public:
 
 	bool RegisterDelegate(lua_State* InL, int32 InModuleIndex);
 
-	void RunMainFunction();
+	void RunMainFunction(const FString& InMainFile = FString("ApplicationMain"));
 
 	//lua has to hold a long life time Uobject, GameInstance is a right one 
 	class UGameInstance* CachedGameInstance = nullptr;

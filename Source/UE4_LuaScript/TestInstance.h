@@ -33,5 +33,5 @@ protected:
 
 	void RunGameScript();
 
-	static class FLuaUnrealWrapper* LuaWrapper;
+	TSharedPtr<class FLuaUnrealWrapper> LuaWrapper = nullptr;
 };

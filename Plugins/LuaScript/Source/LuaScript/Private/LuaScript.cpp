@@ -81,6 +81,17 @@ void FLuaScriptModule::ShutdownModule()
 void FLuaScriptModule::OnResetlLua()
 {
 	OnRestartLuaWrapper.Broadcast();
+
+#if WITH_EDITOR
+	if (EditorLuaWrapper.IsValid() == false)
+	{
+		EditorLuaWrapper = FLuaUnrealWrapper::Create(nullptr, FString("EditorLua"));
+	}
+
+	EditorLuaWrapper->Reset();
+	EditorLuaWrapper->Init(nullptr);
+	EditorLuaWrapper->RunMainFunction(FString("EditorMain"));
+#endif
 }
 
 

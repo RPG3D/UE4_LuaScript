@@ -6,9 +6,6 @@
 #include "LuaUnrealWrapper.h"
 
 
-FLuaUnrealWrapper* UTestInstance::LuaWrapper = nullptr;
-
-
 void UTestInstance::Init()
 {
 	Super::Init();
@@ -18,9 +15,10 @@ void UTestInstance::Shutdown()
 {
 	Super::Shutdown();
 
-	if (LuaWrapper)
+	if (LuaWrapper.IsValid())
 	{
 		LuaWrapper->Reset();
+		LuaWrapper = nullptr;
 	}
 }
 
@@ -31,7 +29,7 @@ void UTestInstance::OnStart()
 
 void UTestInstance::RunGameScript()
 {
-	if (LuaWrapper == nullptr)
+	if (LuaWrapper.IsValid() == false)
 	{
 		LuaWrapper = FLuaUnrealWrapper::Create(this);
 	}
