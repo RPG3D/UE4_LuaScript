@@ -41,3 +41,5 @@ __pycache__/
 _TempPatch/
 VersionManager/
 Paks/
+
+Plugins/FastLuaScript/Source/FastLuaScript/Generated
