@@ -18,3 +18,5 @@ void FFastLuaScriptModule::ShutdownModule()
 #undef LOCTEXT_NAMESPACE
 	
 IMPLEMENT_MODULE(FFastLuaScriptModule, FastLuaScript)
+
+DEFINE_LOG_CATEGORY(LogFastLuaScript);
