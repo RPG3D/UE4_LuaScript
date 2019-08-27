@@ -28,7 +28,7 @@ public:
 	ELuaUnrealWrapperType WrapperType = ELuaUnrealWrapperType::Struct;
 	const UScriptStruct * StructType = nullptr;
 	//just a memory address flag
-	void* StructInst = nullptr;
+	const void* StructInst = nullptr;
 };
 
 struct FLuaDelegateWrapper
