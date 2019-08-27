@@ -32,7 +32,7 @@ bool FastLuaHelper::HasScriptAccessibleField(const UStruct* InStruct)
 
 bool FastLuaHelper::IsScriptCallableFunction(const UFunction* InFunction)
 {
-	return InFunction && InFunction->HasAnyFunctionFlags(FUNC_BlueprintCallable);
+	return InFunction && InFunction->HasAllFunctionFlags(FUNC_BlueprintCallable | FUNC_Public);
 }
 
 bool FastLuaHelper::IsScriptReadableProperty(const UProperty* InProperty)
@@ -64,6 +64,21 @@ FString FastLuaHelper::GetPropertyTypeName(const UProperty* InProp)
 	else if (const UEnumProperty* EnumProp = Cast<UEnumProperty>(InProp))
 	{
 		TypeName = FString("uint8");
+		if (EnumProp->GetEnum())
+		{
+			TypeName = EnumProp->GetEnum()->CppType;
+		}
+	}
+	else if (const UByteProperty* ByteProp = Cast<UByteProperty>(InProp))
+	{
+		if (ByteProp->Enum)
+		{
+			TypeName = FString::Printf(TEXT("TEnumAsByte<%s>"), *ByteProp->Enum->CppType);
+		}
+		else
+		{
+			TypeName = FString("uint8");
+		}
 	}
 	else if (const UNameProperty* NameProp = Cast<UNameProperty>(InProp))
 	{
@@ -95,8 +110,72 @@ FString FastLuaHelper::GetPropertyTypeName(const UProperty* InProp)
 		FString MetaClassPrefix = StructProp->Struct->GetPrefixCPP();
 		TypeName = FString::Printf(TEXT("%s%s"), *MetaClassPrefix, *MetaClassName);
 	}
+	else if (const UMulticastDelegateProperty* MultiDelegateProp = Cast<UMulticastDelegateProperty>(InProp))
+	{
+		TypeName = FString("FMulticastScriptDelegate");
+	}
+	else if (const UDelegateProperty* DelegateProp = Cast<UDelegateProperty>(InProp))
+	{
+		TypeName = FString("FScriptDelegate");
+	}
+	else if (const USoftClassProperty* SoftClassProp = Cast<USoftClassProperty>(InProp))
+	{
+		FString MetaClassName = SoftClassProp->MetaClass->GetName();
+		TypeName = FString::Printf(TEXT("TSoftClassPtr<U%s>"), *MetaClassName);
+	}
+	else if (const USoftObjectProperty* SoftObjectProp = Cast<USoftObjectProperty>(InProp))
+	{
+		TypeName = FString::Printf(TEXT("TSoftObjectPtr<UObject>"));
+	}
+	else if (const UInterfaceProperty* InterfaceProp = Cast<UInterfaceProperty>(InProp))
+	{
+		FString MetaClassName = InterfaceProp->InterfaceClass->GetName();
+		TypeName = FString::Printf(TEXT("TScriptInterface<I%s>"), *MetaClassName);
+	}
+	else if (const UArrayProperty* ArrayProp = Cast<UArrayProperty>(InProp))
+	{
+		FString ElementTypeName = GetPropertyTypeName(ArrayProp->Inner);
+		FString PointerFlag;
+		if (IsPointerType(ElementTypeName))
+		{
+			PointerFlag = FString("*");
+		}
+		TypeName = FString::Printf(TEXT("TArray<%s%s>"), *ElementTypeName, *PointerFlag);
+	}
+	else if (const USetProperty* SetProp = Cast<USetProperty>(InProp))
+	{
+		FString ElementTypeName = GetPropertyTypeName(SetProp->ElementProp);
+		FString PointerFlag;
+		if (IsPointerType(ElementTypeName))
+		{
+			PointerFlag = FString("*");
+		}
+		TypeName = FString::Printf(TEXT("TSet<%s%s>"), *ElementTypeName, *PointerFlag);
+	}
+	else if (const UMapProperty* MapProp = Cast<UMapProperty>(InProp))
+	{
+		FString KeyTypeName = GetPropertyTypeName(MapProp->KeyProp);
+		FString KeyPointerFlag;
+		if (IsPointerType(KeyTypeName))
+		{
+			KeyPointerFlag = FString("*");
+		}
+
+		FString ValueTypeName = GetPropertyTypeName(MapProp->ValueProp);
+		FString ValuePointerFlag;
+		if (IsPointerType(ValueTypeName))
+		{
+			ValuePointerFlag = FString("*");
+		}
+		TypeName = FString::Printf(TEXT("TMap<%s%s, %s%s>"), *KeyTypeName, *KeyPointerFlag, *ValueTypeName, *ValuePointerFlag);
+	}
 
 	return TypeName;
+}
+
+bool FastLuaHelper::IsPointerType(const FString& InTypeName)
+{
+	return InTypeName.StartsWith(FString("U"), ESearchCase::CaseSensitive) || InTypeName.StartsWith(FString("A"), ESearchCase::CaseSensitive);
 }
 
 void FastLuaHelper::PushProperty(lua_State* InL, UProperty* InProp, void* InBuff, bool bRef /*= true*/)
@@ -197,9 +276,6 @@ void FastLuaHelper::PushProperty(lua_State* InL, UProperty* InProp, void* InBuff
 
 FString FastLuaHelper::GetFetchPropertyStr(const UProperty* InProp, const FString& InParamName, int32 InStackIndex /*= -1*/)
 {
-	//SCOPE_CYCLE_COUNTER(STAT_FetchFromLua);
-	//no enough params
-
 	FString BodyStr;
 
 	FString PropName = InProp->GetName();
@@ -210,7 +286,7 @@ FString FastLuaHelper::GetFetchPropertyStr(const UProperty* InProp, const FStrin
 	}
 	else if (const UInt64Property * Int64Prop = Cast<UInt64Property>(InProp))
 	{
-		BodyStr = FString::Printf(TEXT("int32 %s = lua_tointeger(InL, %d);"), *InParamName, InStackIndex);
+		BodyStr = FString::Printf(TEXT("int64 %s = lua_tointeger(InL, %d);"), *InParamName, InStackIndex);
 	}
 	else if (const UFloatProperty* FloatProp = Cast<UFloatProperty>(InProp))
 	{
@@ -218,7 +294,7 @@ FString FastLuaHelper::GetFetchPropertyStr(const UProperty* InProp, const FStrin
 	}
 	else if (const UBoolProperty* BoolProp = Cast<UBoolProperty>(InProp))
 	{
-		BodyStr = FString::Printf(TEXT("int32 %s = lua_tointeger(InL, %d);"), *InParamName, InStackIndex);
+		BodyStr = FString::Printf(TEXT("bool %s = (bool)lua_toboolean(InL, %d);"), *InParamName, InStackIndex);
 	}
 	else if (const UNameProperty* NameProp = Cast<UNameProperty>(InProp))
 	{
@@ -234,11 +310,27 @@ FString FastLuaHelper::GetFetchPropertyStr(const UProperty* InProp, const FStrin
 	}
 	else if (const UByteProperty* ByteProp = Cast<UByteProperty>(InProp))
 	{
-		BodyStr = FString::Printf(TEXT("uint8 %s = lua_tointeger(InL, %d);"), *InParamName, InStackIndex);
+		if (ByteProp->Enum)
+		{
+			FString EnumName = ByteProp->Enum->CppType;
+			BodyStr = FString::Printf(TEXT("TEnumAsByte<%s> %s = (%s)lua_tointeger(InL, %d);"), *EnumName, *InParamName, *EnumName, InStackIndex);
+		}
+		else
+		{
+			BodyStr = FString::Printf(TEXT("uint8 %s = (uint8)lua_tointeger(InL, %d);"), *InParamName, InStackIndex);
+		}
 	}
 	else if (const UEnumProperty* EnumProp = Cast<UEnumProperty>(InProp))
 	{
-		BodyStr = FString::Printf(TEXT("uint8 %s = lua_tointeger(InL, %d);"), *InParamName, InStackIndex);
+		FString EnumName = EnumProp->GetEnum()->CppType;
+		BodyStr = FString::Printf(TEXT("%s %s = (%s)lua_tointeger(InL, %d);"), *EnumName, *InParamName, *EnumName, InStackIndex);
+	}
+	else if (const UStructProperty* StructProp = Cast<UStructProperty>(InProp))
+	{
+		FString MetaClassName = StructProp->Struct->GetName();
+		FString MetaClassPrefix = StructProp->Struct->GetPrefixCPP();
+
+		BodyStr = FString::Printf(TEXT("FLuaStructWrapper* %s_Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, %d); \t%s%s %s; \t%s_Wrapper->StructType->CopyScriptStruct(&%s, &(%s_Wrapper->StructInst));"), *InParamName, InStackIndex, *MetaClassPrefix, *MetaClassName, *InParamName, *InParamName, *InParamName, *InParamName);
 	}
 	else if (const UClassProperty* ClassProp = Cast<UClassProperty>(InProp))
 	{
@@ -246,18 +338,25 @@ FString FastLuaHelper::GetFetchPropertyStr(const UProperty* InProp, const FStrin
 		FString MetaClassPrefix = ClassProp->MetaClass->GetPrefixCPP();
 		BodyStr = FString::Printf(TEXT("FLuaObjectWrapper* %s_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, %d);\tTSubclassOf<%s%s> %s = (UClass*)%s_Wrapper->ObjInst.Get();"), *InParamName, InStackIndex, *MetaClassPrefix, *MetaClassName, *InParamName, *InParamName);
 	}
-	else if (const UStructProperty* StructProp = Cast<UStructProperty>(InProp))
-	{
-		FString MetaClassName = StructProp->Struct->GetName();
-		FString MetaClassPrefix = StructProp->Struct->GetPrefixCPP();
-		
-		BodyStr = FString::Printf(TEXT("FLuaStructWrapper* %s_Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, %d); \t%s%s %s; \t%s_Wrapper->StructType->CopyScriptStruct(&%s, &(%s_Wrapper->StructInst));"), *InParamName, InStackIndex, *MetaClassPrefix, *MetaClassName, *InParamName, *InParamName, *InParamName, *InParamName);
-	}
 	else if (const UObjectProperty* ObjectProp = Cast<UObjectProperty>(InProp))
 	{
 		FString MetaClassName = ObjectProp->PropertyClass->GetName();
 		FString MetaClassPrefix = ObjectProp->PropertyClass->GetPrefixCPP();
 		BodyStr = FString::Printf(TEXT("FLuaObjectWrapper* %s_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, %d);\t%s%s* %s = Cast<%s%s>(%s_Wrapper->ObjInst.Get());"), *InParamName, InStackIndex, *MetaClassPrefix, *MetaClassName, *InParamName, *MetaClassPrefix, *MetaClassName, *InParamName);
+	}
+	else if (const USoftClassProperty* SoftClassProp = Cast<USoftClassProperty>(InProp))
+	{
+		FString MetaClassName = SoftClassProp->MetaClass->GetName();
+		BodyStr = FString::Printf(TEXT("FLuaSoftClassWrapper* %s_Wrapper = (FLuaSoftClassWrapper*)lua_touserdata(InL, %d);\tTSoftClassPtr<U%s> %s = %s_Wrapper->SoftClassInst;"), *InParamName, InStackIndex, *MetaClassName, *InParamName, *InParamName);
+	}
+	else if (const USoftObjectProperty* SoftObjectProp = Cast<USoftObjectProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("FLuaSoftObjectWrapper* %s_Wrapper = (FLuaSoftObjectWrapper*)lua_touserdata(InL, %d);\tTSoftObjectPtr<UObject> %s = %s_Wrapper->SoftObjInst;"), *InParamName, InStackIndex, *InParamName, *InParamName);
+	}
+	else if (const UInterfaceProperty* InterfaceProp = Cast<UInterfaceProperty>(InProp))
+	{
+		FString MetaClassName = InterfaceProp->InterfaceClass->GetName();
+		BodyStr = FString::Printf(TEXT("FLuaInterfaceWrapper* %s_Wrapper = (FLuaInterfaceWrapper*)lua_touserdata(InL, %d);\tTScriptInterface<I%s> %s = %s_Wrapper->InterfaceClass;"), *InParamName, InStackIndex, *MetaClassName, *InParamName, *InParamName);
 	}
 	/*else if (const UDelegateProperty* DelegateProp = Cast<UDelegateProperty>(InProp))
 	{
@@ -280,7 +379,7 @@ FString FastLuaHelper::GetFetchPropertyStr(const UProperty* InProp, const FStrin
 		FString ElementTypeName = GetPropertyTypeName(ArrayProp->Inner);
 
 		FString PointerFlag;
-		if (ElementTypeName.StartsWith(FString("U"), ESearchCase::CaseSensitive) || ElementTypeName.StartsWith(FString("A"), ESearchCase::CaseSensitive))
+		if (IsPointerType(ElementTypeName))
 		{
 			PointerFlag = FString("*");
 		}
@@ -294,7 +393,7 @@ FString FastLuaHelper::GetFetchPropertyStr(const UProperty* InProp, const FStrin
 		FString ElementTypeName = GetPropertyTypeName(SetProp->ElementProp);
 
 		FString PointerFlag;
-		if (ElementTypeName.StartsWith(FString("U"), ESearchCase::CaseSensitive) || ElementTypeName.StartsWith(FString("A"), ESearchCase::CaseSensitive))
+		if (IsPointerType(ElementTypeName))
 		{
 			PointerFlag = FString("*");
 		}
@@ -308,7 +407,7 @@ FString FastLuaHelper::GetFetchPropertyStr(const UProperty* InProp, const FStrin
 		FString KeyTypeName = GetPropertyTypeName(MapProp->KeyProp);
 
 		FString KeyPointerFlag;
-		if (KeyTypeName.StartsWith(FString("U"), ESearchCase::CaseSensitive) || KeyTypeName.StartsWith(FString("A"), ESearchCase::CaseSensitive))
+		if (IsPointerType(KeyTypeName))
 		{
 			KeyPointerFlag = FString("*");
 		}
@@ -316,7 +415,7 @@ FString FastLuaHelper::GetFetchPropertyStr(const UProperty* InProp, const FStrin
 		FString ValueTypeName = GetPropertyTypeName(MapProp->ValueProp);
 
 		FString ValuePointerFlag;
-		if (ValueTypeName.StartsWith(FString("U"), ESearchCase::CaseSensitive) || ValueTypeName.StartsWith(FString("A"), ESearchCase::CaseSensitive))
+		if (IsPointerType(ValueTypeName))
 		{
 			ValuePointerFlag = FString("*");
 		}
@@ -326,6 +425,10 @@ FString FastLuaHelper::GetFetchPropertyStr(const UProperty* InProp, const FStrin
 		FString NewValueElement = FString::Printf(TEXT("%s"), *FastLuaHelper::GetFetchPropertyStr(MapProp->ValueProp, FString::Printf(TEXT("Temp_NewValueElement")), -1));
 
 		BodyStr = FString::Printf(TEXT("TMap<%s%s, %s%s> %s;\n\t{\n\tif(lua_istable(InL, %d))\n\t{\n\tlua_pushnil(InL);\n\twhile(lua_next(InL, -2))\n\t{\n\t%s\n\t%s \n\t%s.Add(Temp_NewKeyElement, Temp_NewValueElement);\n\tlua_pop(InL, 1); \n\t}\n\t}  \n\t}"), *KeyTypeName, *KeyPointerFlag, *ValueTypeName, *ValuePointerFlag, *InParamName, InStackIndex, *NewKeyElement, *NewValueElement, *InParamName);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("breakpoint!"));
 	}
 
 	return BodyStr;

@@ -11,7 +11,10 @@ enum class ELuaUnrealWrapperType
 {
 	Object = 2019,
 	Struct = 2020,
-	Delegate = 2021
+	Delegate = 2021,
+	SoftClass,
+	SoftObject,
+	Interface
 };
 
 struct FLuaObjectWrapper
@@ -41,6 +44,27 @@ public:
 	class UFunction* FunctionSignature = nullptr;
 };
 
+struct FLuaSoftClassWrapper
+{
+public:
+	ELuaUnrealWrapperType WrapperType = ELuaUnrealWrapperType::SoftClass;
+	TSoftClassPtr<UObject> SoftClassInst = nullptr;
+};
+
+struct FLuaSoftObjectWrapper
+{
+public:
+	ELuaUnrealWrapperType WrapperType = ELuaUnrealWrapperType::SoftObject;
+	TSoftObjectPtr<UObject> SoftObjInst = nullptr;
+};
+
+struct FLuaInterfaceWrapper
+{
+public:
+	ELuaUnrealWrapperType WrapperType = ELuaUnrealWrapperType::Interface;
+	class UClass* InterfaceClass = nullptr;
+	//FScriptInterface
+};
 
 /**
  * 
@@ -52,7 +76,11 @@ public:
 	static bool IsScriptCallableFunction(const UFunction* InFunction);
 	static bool IsScriptReadableProperty(const UProperty* InProperty);
 
+	//get actual cpp type str. int32/float/TArray<AActor*>/TMap<int32, uint8>
 	static FString GetPropertyTypeName(const UProperty* InProp);
+
+	//start with U or A
+	static bool IsPointerType(const FString& InTypeName);
 
 	static void PushProperty(lua_State* InL, UProperty* InProp, void* InBuff, bool bRef = true);
 	static FString GetFetchPropertyStr(const UProperty* InProp, const FString& InParamName, int32 InStackIndex = -1);

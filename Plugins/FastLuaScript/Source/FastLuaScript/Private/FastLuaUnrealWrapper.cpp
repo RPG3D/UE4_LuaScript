@@ -112,6 +112,11 @@ FString FastLuaUnrealWrapper::GetFunctionBodyStr(const class UFunction* InFuncti
 
 	TArray<FString> InputParamNames;
 
+	if (FuncName == FString("SetSoftObjectPropertyByName"))
+	{
+		UE_LOG(LogTemp, Log, TEXT("breakpoint!"));
+	}
+
 	//fill params
 	UProperty* ReturnProp = nullptr;
 
@@ -146,7 +151,13 @@ FString FastLuaUnrealWrapper::GetFunctionBodyStr(const class UFunction* InFuncti
 	FString ReturnPropStr;
 	if (ReturnProp != nullptr)
 	{
-		ReturnPropStr = FString::Printf(TEXT("%s ReturnValue = "), *FastLuaHelper::GetPropertyTypeName(ReturnProp));
+		FString ReturnTypeName = FastLuaHelper::GetPropertyTypeName(ReturnProp);
+		FString PointerFlag;
+		if (FastLuaHelper::IsPointerType(ReturnTypeName))
+		{
+			PointerFlag = FString("*");
+		}
+		ReturnPropStr = FString::Printf(TEXT("%s%s ReturnValue = "), *ReturnTypeName, *PointerFlag);
 	}
 
 	FString CallFuncStr = FString::Printf(TEXT("%sThisObject->%s(%s);"), *ReturnPropStr, *FuncName, *FuncParamStr);
