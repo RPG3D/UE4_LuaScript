@@ -36,7 +36,7 @@ bool FUnrealMisc::HasScriptAccessibleField(const UStruct* InStruct)
 
 bool FUnrealMisc::IsScriptCallableFunction(const UFunction* InFunction)
 {
-	return InFunction && InFunction->HasAnyFunctionFlags(FUNC_BlueprintCallable);
+	return InFunction && InFunction->HasAllFunctionFlags(FUNC_BlueprintCallable | FUNC_Public);
 }
 
 bool FUnrealMisc::IsScriptReadableProperty(const UProperty* InProperty)
