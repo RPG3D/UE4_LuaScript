@@ -10,6 +10,8 @@ GameplayStatics = GameplayStatics or Unreal.LuaGetUnrealCDO("GameplayStatics")
 BlueprintPathsLibrary = BlueprintPathsLibrary or Unreal.LuaGetUnrealCDO("BlueprintPathsLibrary")
 
 
+AssetRegistryHelpers = AssetRegistryHelpers or Unreal.LuaGetUnrealCDO("AssetRegistryHelpers")
+
 local Timer = require("Timer")
 
 GTimer = Timer:new("GTimer")
@@ -18,6 +20,8 @@ inspect = require("inspect")
 
 
 function Main()
+
+	local val = AssetRegistryHelpers:GetAssetRegistry()
 
 	print(("----------Lua Ram: %.2fMB----------"):format(collectgarbage("count") / 1024))
 
