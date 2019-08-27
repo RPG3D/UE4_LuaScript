@@ -278,51 +278,55 @@ FString FastLuaHelper::GetFetchPropertyStr(const UProperty* InProp, const FStrin
 	else if (const UArrayProperty* ArrayProp = Cast<UArrayProperty>(InProp))
 	{
 		FString ElementTypeName = GetPropertyTypeName(ArrayProp->Inner);
+
+		FString PointerFlag;
+		if (ElementTypeName.StartsWith(FString("U"), ESearchCase::CaseSensitive) || ElementTypeName.StartsWith(FString("A"), ESearchCase::CaseSensitive))
+		{
+			PointerFlag = FString("*");
+		}
+
 		FString NewElement = FString::Printf(TEXT("%s"), *FastLuaHelper::GetFetchPropertyStr(ArrayProp->Inner, FString::Printf(TEXT("Temp_NewElement")), -1));
 
-		BodyStr = FString::Printf(TEXT("TArray<%s> %s;\n\t{\n\tif(lua_istable(InL, %d))\n\t{\n\t\tlua_pushnil(InL);\n\twhile(lua_next(InL, -2))\n\t{\n\t %s \n\t%s.Add(Temp_NewElement);\n\tlua_pop(InL, 1); \n\t}\n\t}  \n\t}"), *ElementTypeName, *InParamName, InStackIndex, *NewElement, *InParamName);
+		BodyStr = FString::Printf(TEXT("TArray<%s%s> %s;\n\t{\n\tif(lua_istable(InL, %d))\n\t{\n\tlua_pushnil(InL);\n\twhile(lua_next(InL, -2))\n\t{\n\t %s \n\t%s.Add(Temp_NewElement);\n\tlua_pop(InL, 1); \n\t}\n\t}  \n\t}"), *ElementTypeName, *PointerFlag, *InParamName, InStackIndex, *NewElement, *InParamName);
 	}
-	//else if (const USetProperty* SetProp = Cast<USetProperty>(InProp))
-	//{
-	//	FScriptSetHelper SetHelper(SetProp, InBuff);
-	//	int32 i = 0;
-	//	
-	//	lua_pushnil(InL);
-	//	while (lua_next(InL, -2))
-	//	{
-	//		if (SetHelper.Num() < i + 1)
-	//		{
-	//			SetHelper.AddDefaultValue_Invalid_NeedsRehash();
-	//		}
+	else if (const USetProperty* SetProp = Cast<USetProperty>(InProp))
+	{
+		FString ElementTypeName = GetPropertyTypeName(SetProp->ElementProp);
 
-	//		//GetFetchPropertyStr(SetHelper.ElementProp, TODO, -1);
-	//		++i;
-	//		lua_pop(InL, 1);
-	//	}
+		FString PointerFlag;
+		if (ElementTypeName.StartsWith(FString("U"), ESearchCase::CaseSensitive) || ElementTypeName.StartsWith(FString("A"), ESearchCase::CaseSensitive))
+		{
+			PointerFlag = FString("*");
+		}
 
-	//	SetHelper.Rehash();
-	//}
-	//else if (const UMapProperty* MapProp = Cast<UMapProperty>(InProp))
-	//{
-	//	FScriptMapHelper MapHelper(MapProp, InBuff);
-	//	int32 i = 0;
-	//	
-	//	lua_pushnil(InL);
-	//	while (lua_next(InL, -2))
-	//	{
-	//		if (MapHelper.Num() < i + 1)
-	//		{
-	//			MapHelper.AddDefaultValue_Invalid_NeedsRehash();
-	//		}
+		FString NewElement = FString::Printf(TEXT("%s"), *FastLuaHelper::GetFetchPropertyStr(SetProp->ElementProp, FString::Printf(TEXT("Temp_NewElement")), -1));
 
-	//		//GetFetchPropertyStr(MapProp->KeyProp, TODO, -2);
-	//		//GetFetchPropertyStr(MapProp->ValueProp, TODO, -1);
-	//		++i;
-	//		lua_pop(InL, 1);
-	//	}
+		BodyStr = FString::Printf(TEXT("TSet<%s%s> %s;\n\t{\n\tif(lua_istable(InL, %d))\n\t{\n\tlua_pushnil(InL);\n\twhile(lua_next(InL, -2))\n\t{\n\t %s \n\t%s.Add(Temp_NewElement);\n\tlua_pop(InL, 1); \n\t}\n\t}  \n\t}"), *ElementTypeName, *PointerFlag, *InParamName, InStackIndex, *NewElement, *InParamName);
+	}
+	else if (const UMapProperty* MapProp = Cast<UMapProperty>(InProp))
+	{
+		FString KeyTypeName = GetPropertyTypeName(MapProp->KeyProp);
 
-	//	MapHelper.Rehash();
-	//}
+		FString KeyPointerFlag;
+		if (KeyTypeName.StartsWith(FString("U"), ESearchCase::CaseSensitive) || KeyTypeName.StartsWith(FString("A"), ESearchCase::CaseSensitive))
+		{
+			KeyPointerFlag = FString("*");
+		}
+
+		FString ValueTypeName = GetPropertyTypeName(MapProp->ValueProp);
+
+		FString ValuePointerFlag;
+		if (ValueTypeName.StartsWith(FString("U"), ESearchCase::CaseSensitive) || ValueTypeName.StartsWith(FString("A"), ESearchCase::CaseSensitive))
+		{
+			ValuePointerFlag = FString("*");
+		}
+
+		FString NewKeyElement = FString::Printf(TEXT("%s"), *FastLuaHelper::GetFetchPropertyStr(MapProp->KeyProp, FString::Printf(TEXT("Temp_NewKeyElement")), -2));
+
+		FString NewValueElement = FString::Printf(TEXT("%s"), *FastLuaHelper::GetFetchPropertyStr(MapProp->ValueProp, FString::Printf(TEXT("Temp_NewValueElement")), -1));
+
+		BodyStr = FString::Printf(TEXT("TMap<%s%s, %s%s> %s;\n\t{\n\tif(lua_istable(InL, %d))\n\t{\n\tlua_pushnil(InL);\n\twhile(lua_next(InL, -2))\n\t{\n\t%s\n\t%s \n\t%s.Add(Temp_NewKeyElement, Temp_NewValueElement);\n\tlua_pop(InL, 1); \n\t}\n\t}  \n\t}"), *KeyTypeName, *KeyPointerFlag, *ValueTypeName, *ValuePointerFlag, *InParamName, InStackIndex, *NewKeyElement, *NewValueElement, *InParamName);
+	}
 
 	return BodyStr;
 

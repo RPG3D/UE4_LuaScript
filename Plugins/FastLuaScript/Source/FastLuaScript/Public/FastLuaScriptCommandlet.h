@@ -20,11 +20,15 @@ public:
 
 protected:
 
+	int32 InitConfig();
+
 	int32 GeneratedCode() const;
 
 	int32 GenerateCodeForClass(const class UClass* InClass) const;
 
 	//int32 GenerateCodeForStruct(const class UScriptStruct* InClass);
 
-	FString CodeDirectory = FPaths::GamePluginsDir() / FString("FastLuaScript/Source/FastLuaScript/Generated");
+	FString CodeDirectory = FPaths::ProjectPluginsDir() / FString("FastLuaScript/Source/FastLuaScript/Generated");
+
+	TArray<FString> ModulesShouldExport;
 };

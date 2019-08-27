@@ -8,7 +8,18 @@
 
 int32 UFastLuaScriptCommandlet::Main(const FString& Params)
 {
+	InitConfig();
 	return GeneratedCode();
+}
+
+int32 UFastLuaScriptCommandlet::InitConfig()
+{
+	if (FFileHelper::LoadFileToStringArray(ModulesShouldExport, *(FPaths::ProjectPluginsDir() / FString("FastLuaScript/Config/ModuleToExport.txt"))))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Read ModuleToExport.txt OK!"));
+	}
+
+	return 0;
 }
 
 int32 UFastLuaScriptCommandlet::GeneratedCode() const
@@ -34,9 +45,25 @@ int32 UFastLuaScriptCommandlet::GenerateCodeForClass(const class UClass* InClass
 	UPackage* Pkg = InClass->GetOutermost();
 	FString PkgName = Pkg->GetName();
 
-	if (PkgName.EndsWith(FString("UnrealEd"), ESearchCase::IgnoreCase) || PkgName.EndsWith(FString("Editor"), ESearchCase::IgnoreCase))
+	/*if (PkgName.EndsWith(FString("UnrealEd"), ESearchCase::IgnoreCase) || PkgName.EndsWith(FString("Editor"), ESearchCase::IgnoreCase))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Skip non runtime module: %s"), *PkgName);
+		return 0;
+	}*/
+
+	bool bShouldExportModule = false;
+
+	for (int32 i = 0; i < ModulesShouldExport.Num(); ++i)
+	{
+		if (PkgName.EndsWith(ModulesShouldExport[i], ESearchCase::IgnoreCase))
+		{
+			bShouldExportModule = true;
+			break;
+		}
+	}
+
+	if (bShouldExportModule == false)
+	{
 		return 0;
 	}
 
