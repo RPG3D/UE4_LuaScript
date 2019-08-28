@@ -81,9 +81,6 @@ public:
 	//start with U or A
 	static bool IsPointerType(const FString& InTypeName);
 
-	static FString GeneratePushPropertyStr(const UProperty* InProp, const FString& InParamName);
-	static FString GenerateFetchPropertyStr(const UProperty* InProp, const FString& InParamName, int32 InStackIndex = -1, const class UStruct* InSruct = nullptr);
-
 	static UObject* FetchObject(lua_State* InL, int32 InIndex);
 	static void PushObject(lua_State* InL, UObject* InObj);
 
@@ -91,12 +88,6 @@ public:
 	static void PushStruct(lua_State* InL, const UScriptStruct* InStruct, const void* InBuff);
 
 	static void PushDelegate(lua_State* InL, void* InDelegateInst, bool InMulti = true);
-
-	static int32 GetObjectProperty(lua_State* L);
-	static int32 SetObjectProperty(lua_State* L);
-
-	static int32 GetStructProperty(lua_State* InL);
-	static int32 SetStructProperty(lua_State* InL);
 
 	static int32 CallFunction(lua_State* L);
 

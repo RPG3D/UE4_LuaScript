@@ -13,289 +13,6 @@
 #include "FastLuaHelper.h"
 
 
-int InitUnrealLib(lua_State* L);
-int RegisterRawAPI(lua_State* InL);
-int RequireFromUFS(lua_State* InL);
-
-
-FastLuaUnrealWrapper::FastLuaUnrealWrapper()
-{
-}
-
-FastLuaUnrealWrapper::~FastLuaUnrealWrapper()
-{
-	Reset();
-}
-
-TSharedPtr<FastLuaUnrealWrapper> FastLuaUnrealWrapper::Create(class UGameInstance* InGameInstance, const FString& InName)
-{
-	TSharedPtr<FastLuaUnrealWrapper> Inst(new FastLuaUnrealWrapper());
-	if (InName.Len())
-	{
-		Inst->LuaStateName = InName;
-	}
-	Inst->Init(InGameInstance);
-
-	return Inst;
-}
-
-void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
-{
-	if (L == nullptr)
-	{
-		L = lua_newstate(FastLuaHelper::LuaAlloc, this);
-		luaL_openlibs(L);
-
-		lua_pushlightuserdata(L, this);
-		lua_rawsetp(L, LUA_REGISTRYINDEX, L);
-	}
-}
-
-void FastLuaUnrealWrapper::RegisterProperty(lua_State* InL, const UProperty* InProperty, bool InIsStruct)
-{
-	if (FastLuaHelper::IsScriptReadableProperty(InProperty) == false)
-	{
-		return;
-	}
-
-	{
-		const FString PropName = "Get" + InProperty->GetName();
-
-		lua_pushlightuserdata(InL, (void*)InProperty);
-		if (InIsStruct)
-		{
-			lua_pushcclosure(InL, FastLuaHelper::GetStructProperty, 1);
-		}
-		else
-		{
-			lua_pushcclosure(InL, FastLuaHelper::GetObjectProperty, 1);
-		}
-
-		lua_setfield(InL, -2, TCHAR_TO_UTF8(*PropName));
-	}
-
-	{
-		const FString PropName = "Set" + InProperty->GetName();
-
-		lua_pushlightuserdata(InL, (void*)InProperty);
-		if (InIsStruct)
-		{
-			lua_pushcclosure(InL, FastLuaHelper::SetStructProperty, 1);
-		}
-		else
-		{
-			lua_pushcclosure(InL, FastLuaHelper::SetObjectProperty, 1);
-		}
-
-
-		lua_setfield(InL, -2, TCHAR_TO_UTF8(*PropName));
-	}
-}
-
-FString FastLuaUnrealWrapper::GenerateFunctionBodyStr(const class UFunction* InFunction, const class UClass* InClass)
-{
-	if (InClass == nullptr || FastLuaHelper::IsScriptCallableFunction(InFunction) == false)
-	{
-		return FString("");
-	}
-
-	const FString ClassName = InClass->GetName();
-	const FString ClassPrefix = InClass->GetPrefixCPP();
-	
-	const FString FuncName = InFunction->GetName();
-	
-	//first line: FLuaObjectWrapper* ThisObject_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
-	FString BodyStr = FString::Printf(TEXT("\tFLuaObjectWrapper* ThisObject_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);\t%s%s* ThisObject = Cast<%s%s>(ThisObject_Wrapper->ObjInst.Get());\n"), *ClassPrefix, *ClassName, *ClassPrefix, *ClassName);
-
-	int32 LuaStackIndex = 2;
-
-	TArray<FString> InputParamNames;
-
-	//fill params
-	UProperty* ReturnProp = nullptr;
-
-	for (TFieldIterator<UProperty> It(InFunction); It; ++It)
-	{
-		UProperty* Prop = *It;
-		FString PropName = Prop->GetName();
-		if (Prop->HasAnyPropertyFlags(CPF_ReturnParm))
-		{
-			ReturnProp = Prop;
-		}
-		else
-		{
-			FString TmpParamName = FString::Printf(TEXT("Param_%d_%s"), LuaStackIndex, *PropName);
-			InputParamNames.Add(TmpParamName);
-			FString FetchPropStr = FastLuaHelper::GenerateFetchPropertyStr(Prop, TmpParamName, LuaStackIndex, InClass);
-			++LuaStackIndex;
-			BodyStr += FString::Printf(TEXT("\t%s\n"), *FetchPropStr);
-		}
-	}
-
-	FString FuncParamStr;
-	for (int32 i = 0; i < InputParamNames.Num(); ++i)
-	{
-		FuncParamStr += InputParamNames[i];
-		if (i != InputParamNames.Num() - 1)
-		{
-			FuncParamStr += FString(", ");
-		}
-	}
-	
-	FString ReturnPropStr;
-	if (ReturnProp != nullptr)
-	{
-		FString ReturnTypeName = FastLuaHelper::GetPropertyTypeName(ReturnProp);
-		FString PointerFlag;
-		if (FastLuaHelper::IsPointerType(ReturnTypeName))
-		{
-			PointerFlag = FString("*");
-		}
-		ReturnPropStr = FString::Printf(TEXT("%s%s ReturnValue = "), *ReturnTypeName, *PointerFlag);
-	}
-
-	FString CallFuncStr = FString::Printf(TEXT("%sThisObject->%s(%s);"), *ReturnPropStr, *FuncName, *FuncParamStr);
-
-	BodyStr += FString::Printf(TEXT("\n\t%s\n\t"), *CallFuncStr);
-
-	//push return value
-	if (ReturnProp)
-	{
-		FString PushReturnStr = FString::Printf(TEXT("%s"), *FastLuaHelper::GeneratePushPropertyStr(ReturnProp, FString("ReturnValue")));
-		BodyStr += PushReturnStr;
-	}
-
-	BodyStr += FString::Printf(TEXT("\n\treturn %d;"), ReturnProp != nullptr);
-
-	return BodyStr;
-}
-
-FString FastLuaUnrealWrapper::GenerateGetPropertyStr(const class UProperty* InProperty, const FString& InParamName, const class UStruct* InStruct)
-{
-	const FString ClassName = InStruct->GetName();
-	const FString ClassPrefix = InStruct->GetPrefixCPP();
-
-	FString BodyStr = FastLuaHelper::GenerateFetchPropertyStr(nullptr, FString("ThisObject"), 1, InStruct);
-
-	if (FastLuaHelper::IsPointerType(ClassPrefix))
-	{
-		BodyStr += FastLuaHelper::GeneratePushPropertyStr(InProperty, FString("ThisObject->") + InParamName);
-	}
-	else
-	{
-		BodyStr += FastLuaHelper::GeneratePushPropertyStr(InProperty, FString("ThisObject.") + InParamName);
-	}
-
-	BodyStr += FString("\n\treturn 1;");
-	return BodyStr;
-}
-
-FString FastLuaUnrealWrapper::GenerateSetPropertyStr(const class UProperty* InProperty, const FString& InParamName, const class UStruct* InStruct)
-{
-	const FString ClassName = InStruct->GetName();
-	const FString ClassPrefix = InStruct->GetPrefixCPP();
-
-	FString BodyStr = FastLuaHelper::GenerateFetchPropertyStr(nullptr, FString("ThisObject"), 1, InStruct);
-	BodyStr += FastLuaHelper::GenerateFetchPropertyStr(InProperty, FString("InParam_") + InParamName, 2);
-
-	if (FastLuaHelper::IsPointerType(ClassPrefix))
-	{
-		BodyStr += FString::Printf(TEXT("\n\tThisObject->%s = InParam_%s;"), *InParamName, *InParamName);
-	}
-	else
-	{
-		BodyStr += FString::Printf(TEXT("\n\tThisObject.%s = InParam_%s;"), *InParamName, *InParamName);
-	}
-
-	BodyStr += FString("\n\treturn 0;");
-	return BodyStr;
-}
-
-void FastLuaUnrealWrapper::Reset()
-{
-	if (L)
-	{
-		lua_close(L);
-		L = nullptr;
-	}
-
-	LuaMemory = 0;
-
-	if (LuaTickerHandle.IsValid())
-	{
-		FTicker::GetCoreTicker().RemoveTicker(LuaTickerHandle);
-		LuaTickerHandle.Reset();
-	}
-
-}
-
-bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
-{
-	static float Count = 0.f;
-
-	if (L)
-	{
-		int32 tp = lua_gettop(L);
-		lua_getglobal(L, "Unreal");
-		if (lua_istable(L, -1))
-		{
-			lua_getfield(L, -1, "Ticker");
-			if (lua_isfunction(L, -1))
-			{
-				//SCOPE_CYCLE_COUNTER(STAT_LuaTick);
-				lua_pushnumber(L, InDeltaTime);
-				int32 Ret = lua_pcall(L, 1, 0, 0);
-				if (Ret)
-				{
-					Count += InDeltaTime;
-					if (Count > 2.f)
-					{
-						Count = 0.f;
-						FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(L, -1))), 1, this);
-					}
-
-				}
-				
-			}
-		}
-
-		lua_settop(L, tp);
-	}
-
-	return true;
-}
-
-void FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString("ApplicationMain")*/)
-{
-	//load entry lua
-	FString LoadMainScript = FString::Printf(TEXT("require('%s')"), *InMainFile);
-	int32 Ret = luaL_dostring(GetLuaSate(), TCHAR_TO_UTF8(*LoadMainScript));
-	if (Ret > 0)
-	{
-		FString RetString = UTF8_TO_TCHAR(lua_tostring(L, -1));
-		FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), *RetString), 1, this);
-	}
-	//run Main
-	Ret = lua_getglobal(L, "Main");
-	Ret = lua_pcall(L, 0, 0, 0);
-	if (Ret > 0)
-	{
-		FString RetString = UTF8_TO_TCHAR(lua_tostring(L, -1));
-		FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), *RetString), 1, this);
-	}
-
-	if (LuaTickerHandle.IsValid() == false)
-	{
-		LuaTickerHandle = FTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FastLuaUnrealWrapper::HandleLuaTick));
-	}
-
-}
-
-FString FastLuaUnrealWrapper::DoLuaCode(const FString& InCode)
-{
-	luaL_dostring(GetLuaSate(), TCHAR_TO_UTF8(*InCode));
-	return UTF8_TO_TCHAR(lua_tostring(L, -1));
-}
 
 int InitUnrealLib(lua_State* L)
 {
@@ -400,6 +117,258 @@ int RequireFromUFS(lua_State* InL)
 }
 
 
+
+
+
+FastLuaUnrealWrapper::FastLuaUnrealWrapper()
+{
+}
+
+FastLuaUnrealWrapper::~FastLuaUnrealWrapper()
+{
+	Reset();
+}
+
+TSharedPtr<FastLuaUnrealWrapper> FastLuaUnrealWrapper::Create(class UGameInstance* InGameInstance, const FString& InName)
+{
+	TSharedPtr<FastLuaUnrealWrapper> Inst(new FastLuaUnrealWrapper());
+	if (InName.Len())
+	{
+		Inst->LuaStateName = InName;
+	}
+	Inst->Init(InGameInstance);
+
+	return Inst;
+}
+
+void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
+{
+	if (L == nullptr)
+	{
+		L = lua_newstate(FastLuaHelper::LuaAlloc, this);
+		luaL_openlibs(L);
+
+		lua_pushlightuserdata(L, this);
+		lua_rawsetp(L, LUA_REGISTRYINDEX, L);
+	}
+}
+
+FString FastLuaUnrealWrapper::GenerateFunctionBodyStr(const class UFunction* InFunction, const class UClass* InClass)
+{
+	if (InClass == nullptr || FastLuaHelper::IsScriptCallableFunction(InFunction) == false)
+	{
+		return FString("");
+	}
+
+	const FString ClassName = InClass->GetName();
+	const FString ClassPrefix = InClass->GetPrefixCPP();
+	
+	const FString FuncName = InFunction->GetName();
+	
+	//first line: FLuaObjectWrapper* ThisObject_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
+	FString BodyStr = FString::Printf(TEXT("\tFLuaObjectWrapper* ThisObject_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);\t%s%s* ThisObject = Cast<%s%s>(ThisObject_Wrapper->ObjInst.Get());\n"), *ClassPrefix, *ClassName, *ClassPrefix, *ClassName);
+
+	int32 LuaStackIndex = 2;
+
+	TArray<FString> InputParamNames;
+
+	//fill params
+	UProperty* ReturnProp = nullptr;
+
+	for (TFieldIterator<UProperty> It(InFunction); It; ++It)
+	{
+		UProperty* Prop = *It;
+		FString PropName = Prop->GetName();
+		if (Prop->HasAnyPropertyFlags(CPF_ReturnParm))
+		{
+			ReturnProp = Prop;
+		}
+		else
+		{
+			FString TmpParamName = FString::Printf(TEXT("Param_%d_%s"), LuaStackIndex, *PropName);
+			InputParamNames.Add(TmpParamName);
+			FString FetchPropStr = GenerateFetchPropertyStr(Prop, TmpParamName, LuaStackIndex, InClass);
+			++LuaStackIndex;
+			BodyStr += FString::Printf(TEXT("\t%s\n"), *FetchPropStr);
+		}
+	}
+
+	FString FuncParamStr;
+	for (int32 i = 0; i < InputParamNames.Num(); ++i)
+	{
+		FuncParamStr += InputParamNames[i];
+		if (i != InputParamNames.Num() - 1)
+		{
+			FuncParamStr += FString(", ");
+		}
+	}
+	
+	FString ReturnPropStr;
+	if (ReturnProp != nullptr)
+	{
+		FString ReturnTypeName = FastLuaHelper::GetPropertyTypeName(ReturnProp);
+		FString PointerFlag;
+		if (FastLuaHelper::IsPointerType(ReturnTypeName))
+		{
+			PointerFlag = FString("*");
+		}
+		ReturnPropStr = FString::Printf(TEXT("%s%s ReturnValue = "), *ReturnTypeName, *PointerFlag);
+	}
+
+	FString CallFuncStr = FString::Printf(TEXT("%sThisObject->%s(%s);"), *ReturnPropStr, *FuncName, *FuncParamStr);
+
+	BodyStr += FString::Printf(TEXT("\n\t%s\n\t"), *CallFuncStr);
+
+	//push return value
+	if (ReturnProp)
+	{
+		FString PushReturnStr = FString::Printf(TEXT("%s"), *GeneratePushPropertyStr(ReturnProp, FString("ReturnValue")));
+		BodyStr += PushReturnStr;
+	}
+
+	BodyStr += FString::Printf(TEXT("\n\treturn %d;"), ReturnProp != nullptr);
+
+	return BodyStr;
+}
+
+FString FastLuaUnrealWrapper::GenerateGetPropertyStr(const class UProperty* InProperty, const FString& InParamName, const class UStruct* InStruct)
+{
+	const FString ClassName = InStruct->GetName();
+	const FString ClassPrefix = InStruct->GetPrefixCPP();
+
+	FString BodyStr = GenerateFetchPropertyStr(nullptr, FString("ThisObject"), 1, InStruct);
+
+	if (FastLuaHelper::IsPointerType(ClassPrefix))
+	{
+		BodyStr += GeneratePushPropertyStr(InProperty, FString("ThisObject->") + InParamName);
+	}
+	else
+	{
+		BodyStr += GeneratePushPropertyStr(InProperty, FString("ThisObject.") + InParamName);
+	}
+
+	BodyStr += FString("\n\treturn 1;");
+	return BodyStr;
+}
+
+FString FastLuaUnrealWrapper::GenerateSetPropertyStr(const class UProperty* InProperty, const FString& InParamName, const class UStruct* InStruct)
+{
+	const FString ClassName = InStruct->GetName();
+	const FString ClassPrefix = InStruct->GetPrefixCPP();
+
+	FString BodyStr = GenerateFetchPropertyStr(nullptr, FString("ThisObject"), 1, InStruct);
+	BodyStr += GenerateFetchPropertyStr(InProperty, FString("InParam_") + InParamName, 2);
+
+	if (FastLuaHelper::IsPointerType(ClassPrefix))
+	{
+		if (const UDelegateProperty* DelegateProp = Cast<UDelegateProperty>(InProperty))
+		{
+			BodyStr += FString::Printf(TEXT("\n\t ThisObject->%s.BindUFunction(%s.GetUObject(), %s.GetFunctionName());"), *InParamName, *FString::Printf(TEXT("InParam_%s"), *InParamName), *FString::Printf(TEXT("InParam_%s"), *InParamName));
+		}
+		else if (const UMulticastDelegateProperty* MultiDelegateProp = Cast<UMulticastDelegateProperty>(InProperty))
+		{
+			//BodyStr += FString::Printf(TEXT("\n\t ThisObject->%s.BindUFunction(%s.GetObject(), %s.GetFunctionName());"), *InParamName, *FString::Printf(TEXT("InParam_%s"), *InParamName), *FString::Printf(TEXT("InParam_%s"), *InParamName));
+		}
+		else
+		{
+			BodyStr += FString::Printf(TEXT("\n\tThisObject->%s = InParam_%s;"), *InParamName, *InParamName);
+		}
+
+	}
+	else
+	{
+		BodyStr += FString::Printf(TEXT("\n\tThisObject.%s = InParam_%s;"), *InParamName, *InParamName);
+	}
+
+	BodyStr += FString("\n\treturn 0;");
+	return BodyStr;
+}
+
+void FastLuaUnrealWrapper::Reset()
+{
+	if (L)
+	{
+		lua_close(L);
+		L = nullptr;
+	}
+
+	LuaMemory = 0;
+
+	if (LuaTickerHandle.IsValid())
+	{
+		FTicker::GetCoreTicker().RemoveTicker(LuaTickerHandle);
+		LuaTickerHandle.Reset();
+	}
+
+}
+
+bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
+{
+	static float Count = 0.f;
+
+	if (L)
+	{
+		int32 tp = lua_gettop(L);
+		lua_getglobal(L, "Unreal");
+		if (lua_istable(L, -1))
+		{
+			lua_getfield(L, -1, "Ticker");
+			if (lua_isfunction(L, -1))
+			{
+				//SCOPE_CYCLE_COUNTER(STAT_LuaTick);
+				lua_pushnumber(L, InDeltaTime);
+				int32 Ret = lua_pcall(L, 1, 0, 0);
+				if (Ret)
+				{
+					Count += InDeltaTime;
+					if (Count > 2.f)
+					{
+						Count = 0.f;
+						FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(L, -1))), 1, this);
+					}
+
+				}
+				
+			}
+		}
+
+		lua_settop(L, tp);
+	}
+
+	return true;
+}
+
+void FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString("ApplicationMain")*/)
+{
+	//load entry lua
+	FString LoadMainScript = FString::Printf(TEXT("require('%s')"), *InMainFile);
+	int32 Ret = luaL_dostring(GetLuaSate(), TCHAR_TO_UTF8(*LoadMainScript));
+	if (Ret > 0)
+	{
+		FString RetString = UTF8_TO_TCHAR(lua_tostring(L, -1));
+		FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), *RetString), 1, this);
+	}
+	//run Main
+	Ret = lua_getglobal(L, "Main");
+	Ret = lua_pcall(L, 0, 0, 0);
+	if (Ret > 0)
+	{
+		FString RetString = UTF8_TO_TCHAR(lua_tostring(L, -1));
+		FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), *RetString), 1, this);
+	}
+
+	if (LuaTickerHandle.IsValid() == false)
+	{
+		LuaTickerHandle = FTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FastLuaUnrealWrapper::HandleLuaTick));
+	}
+
+}
+
+FString FastLuaUnrealWrapper::DoLuaCode(const FString& InCode)
+{
+	luaL_dostring(GetLuaSate(), TCHAR_TO_UTF8(*InCode));
+	return UTF8_TO_TCHAR(lua_tostring(L, -1));
+}
 
 int32 FastLuaUnrealWrapper::InitConfig()
 {
@@ -590,4 +559,245 @@ int32 FastLuaUnrealWrapper::GenerateCodeForClass(const class UClass* InClass) co
 	}
 
 	return 0;
+}
+
+
+
+
+FString FastLuaUnrealWrapper::GeneratePushPropertyStr(const UProperty* InProp, const FString& InParamName)
+{
+	FString BodyStr = FString::Printf(TEXT("lua_pushnil(InL);"));
+
+	if (InProp == nullptr || InProp->GetClass() == nullptr)
+	{
+		return BodyStr;
+	}
+
+	if (const UIntProperty* IntProp = Cast<UIntProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("lua_pushinteger(InL, %s);"), *InParamName);
+	}
+	else if (const UFloatProperty* FloatProp = Cast<UFloatProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("lua_pushnumber(InL, %s);"), *InParamName);
+	}
+	else if (const UEnumProperty* EnumProp = Cast<UEnumProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("lua_pushinteger(InL, (uint8)%s);"), *InParamName);
+	}
+	else if (const UByteProperty* ByteProp = Cast<UByteProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("lua_pushinteger(InL, (uint8)%s);"), *InParamName);
+	}
+	else if (const UBoolProperty* BoolProp = Cast<UBoolProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("lua_pushboolean(InL, (bool)%s);"), *InParamName);
+	}
+	else if (const UNameProperty* NameProp = Cast<UNameProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("lua_pushstring(InL, TCHAR_TO_UTF8(*%s.ToString()));"), *InParamName);
+	}
+	else if (const UStrProperty* StrProp = Cast<UStrProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("lua_pushstring(InL, TCHAR_TO_UTF8(*%s));"), *InParamName);
+	}
+	else if (const UTextProperty* TextProp = Cast<UTextProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("lua_pushstring(InL, TCHAR_TO_UTF8(*%s.ToString()));"), *InParamName);
+	}
+	else if (const UStructProperty* StructProp = Cast<UStructProperty>(InProp))
+	{
+		FString StructName = StructProp->Struct->GetName();
+		BodyStr = FString::Printf(TEXT("FastLuaHelper::PushStruct(InL, (UScriptStruct*)FindObject<UScriptStruct>(ANY_PACKAGE, *FString(\"%s\")), &%s);"), *StructName, *InParamName);
+	}
+	else if (const UClassProperty* ClassProp = Cast<UClassProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("FastLuaHelper::PushObject(InL, (UObject*)%s);"), *InParamName);
+	}
+	else if (const UObjectProperty* ObjectProp = Cast<UObjectProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("FastLuaHelper::PushObject(InL, (UObject*)%s);"), *InParamName);
+	}
+	else if (const UWeakObjectProperty* WeakObjectProp = Cast<UWeakObjectProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("FastLuaHelper::PushObject(InL, (UObject*)%s.Get());"), *InParamName);
+	}
+	else if (const UDelegateProperty* DelegateProp = Cast<UDelegateProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("FastLuaHelper::PushDelegate(InL, (void*)&%s, false);"), *InParamName);
+	}
+	else if (const UMulticastDelegateProperty* MultiDelegateProp = Cast<UMulticastDelegateProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("FastLuaHelper::PushDelegate(InL, (void*)&%s, true);"), *InParamName);
+	}
+	else if (const UArrayProperty* ArrayProp = Cast<UArrayProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("lua_newtable(InL);\tfor(int32 i = 0; i < %s.Num(); ++i)\n\t{\n\t %s\t lua_rawseti(InL, -2, i + 1); \n\t}"), *InParamName, *GeneratePushPropertyStr(ArrayProp->Inner, FString::Printf(TEXT("%s[i]"), *InParamName)));
+	}
+	else if (const USetProperty* SetProp = Cast<USetProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("lua_newtable(InL);\tfor(int32 i = 0; i < %s.Num(); ++i)\n\t{\n\t %s\t lua_rawseti(InL, -2, i + 1); \n\t}"), *InParamName, *GeneratePushPropertyStr(SetProp->ElementProp, FString::Printf(TEXT("%s[i]"), *InParamName)));
+	}
+	else if (const UMapProperty* MapProp = Cast<UMapProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("lua_newtable(InL);  \n\t for(auto& It : %s) \n\t { \n\t %s \n\t %s \n\t lua_rawset(InL, -3); \n\t }"), *InParamName, *GeneratePushPropertyStr(MapProp->KeyProp, FString("It->Key")), *GeneratePushPropertyStr(MapProp->ValueProp, FString("It->Value")));
+	}
+
+	return BodyStr;
+}
+
+FString FastLuaUnrealWrapper::GenerateFetchPropertyStr(const UProperty* InProp, const FString& InParamName, int32 InStackIndex /*= -1*/, const UStruct* InSruct/*= nullptr*/)
+{
+	FString BodyStr;
+
+	//this case is used for fetching lua's self!
+	if (InProp == nullptr && InSruct != nullptr)
+	{
+		if (const UClass* Cls = Cast<UClass>(InSruct))
+		{
+			FString MetaClassName = Cls->GetName();
+			FString MetaClassPrefix = Cls->GetPrefixCPP();
+			BodyStr = FString::Printf(TEXT("FLuaObjectWrapper* %s_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, %d);\t%s%s* %s = (%s%s*)(%s_Wrapper->ObjInst.Get());"), *InParamName, InStackIndex, *MetaClassPrefix, *MetaClassName, *InParamName, *MetaClassPrefix, *MetaClassName, *InParamName);
+		}
+		else if (const UScriptStruct* Struct = Cast<UScriptStruct>(InSruct))
+		{
+			FString MetaClassName = Struct->GetName();
+			FString MetaClassPrefix = Struct->GetPrefixCPP();
+
+			BodyStr = FString::Printf(TEXT("FLuaStructWrapper* %s_Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, %d); \t%s%s %s; \t%s_Wrapper->StructType->CopyScriptStruct(&%s, &(%s_Wrapper->StructInst));"), *InParamName, InStackIndex, *MetaClassPrefix, *MetaClassName, *InParamName, *InParamName, *InParamName, *InParamName);
+		}
+	}
+	else if (const UIntProperty* IntProp = Cast<UIntProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("int32 %s = lua_tointeger(InL, %d);"), *InParamName, InStackIndex);
+	}
+	else if (const UInt64Property* Int64Prop = Cast<UInt64Property>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("int64 %s = lua_tointeger(InL, %d);"), *InParamName, InStackIndex);
+	}
+	else if (const UFloatProperty* FloatProp = Cast<UFloatProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("float %s = lua_tonumber(InL, %d);"), *InParamName, InStackIndex);
+	}
+	else if (const UBoolProperty* BoolProp = Cast<UBoolProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("bool %s = (bool)lua_toboolean(InL, %d);"), *InParamName, InStackIndex);
+	}
+	else if (const UNameProperty* NameProp = Cast<UNameProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("FName %s = FName(UTF8_TO_TCHAR(lua_tostring(InL, %d)));\n"), *InParamName, InStackIndex);
+	}
+	else if (const UStrProperty* StrProp = Cast<UStrProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("FString %s = UTF8_TO_TCHAR(lua_tostring(InL, %d));\n"), *InParamName, InStackIndex);
+	}
+	else if (const UTextProperty* TextProp = Cast<UTextProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("FText %s = FText::FromString(UTF8_TO_TCHAR(lua_tostring(InL, %d)));\n"), *InParamName, InStackIndex);
+	}
+	else if (const UByteProperty* ByteProp = Cast<UByteProperty>(InProp))
+	{
+		if (ByteProp->Enum)
+		{
+			FString EnumName = ByteProp->Enum->CppType;
+			BodyStr = FString::Printf(TEXT("TEnumAsByte<%s> %s = (%s)lua_tointeger(InL, %d);"), *EnumName, *InParamName, *EnumName, InStackIndex);
+		}
+		else
+		{
+			BodyStr = FString::Printf(TEXT("uint8 %s = (uint8)lua_tointeger(InL, %d);"), *InParamName, InStackIndex);
+		}
+	}
+	else if (const UEnumProperty* EnumProp = Cast<UEnumProperty>(InProp))
+	{
+		FString EnumName = EnumProp->GetEnum()->CppType;
+		BodyStr = FString::Printf(TEXT("%s %s = (%s)lua_tointeger(InL, %d);"), *EnumName, *InParamName, *EnumName, InStackIndex);
+	}
+	else if (const UStructProperty* StructProp = Cast<UStructProperty>(InProp))
+	{
+		FString MetaClassName = StructProp->Struct->GetName();
+		FString MetaClassPrefix = StructProp->Struct->GetPrefixCPP();
+
+		BodyStr = FString::Printf(TEXT("FLuaStructWrapper* %s_Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, %d); \t%s%s %s; \t%s_Wrapper->StructType->CopyScriptStruct(&%s, &(%s_Wrapper->StructInst));"), *InParamName, InStackIndex, *MetaClassPrefix, *MetaClassName, *InParamName, *InParamName, *InParamName, *InParamName);
+	}
+	else if (const UObjectProperty* ObjectProp = Cast<UObjectProperty>(InProp))
+	{
+		FString MetaClassName = ObjectProp->PropertyClass->GetName();
+		FString MetaClassPrefix = ObjectProp->PropertyClass->GetPrefixCPP();
+		BodyStr = FString::Printf(TEXT("FLuaObjectWrapper* %s_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, %d);\t%s%s* %s = (%s%s*)(%s_Wrapper->ObjInst.Get());"), *InParamName, InStackIndex, *MetaClassPrefix, *MetaClassName, *InParamName, *MetaClassPrefix, *MetaClassName, *InParamName);
+	}
+	else if (const USoftClassProperty* SoftClassProp = Cast<USoftClassProperty>(InProp))
+	{
+		FString MetaClassName = SoftClassProp->MetaClass->GetName();
+		BodyStr = FString::Printf(TEXT("FLuaSoftClassWrapper* %s_Wrapper = (FLuaSoftClassWrapper*)lua_touserdata(InL, %d);\tTSoftClassPtr<U%s> %s = (TSoftClassPtr<U%s>)%s_Wrapper->SoftClassInst;"), *InParamName, InStackIndex, *MetaClassName, *InParamName, *MetaClassName, *InParamName);
+	}
+	else if (const USoftObjectProperty* SoftObjectProp = Cast<USoftObjectProperty>(InProp))
+	{
+		FString MetaClassName = SoftObjectProp->PropertyClass->GetName();
+		BodyStr = FString::Printf(TEXT("FLuaSoftObjectWrapper* %s_Wrapper = (FLuaSoftObjectWrapper*)lua_touserdata(InL, %d);\tTSoftObjectPtr<U%s> %s = *(TSoftObjectPtr<U%s>*)&%s_Wrapper->SoftObjInst;"), *InParamName, InStackIndex, *MetaClassName, *InParamName, *MetaClassName, *InParamName);
+	}
+	else if (const UWeakObjectProperty* WeakObjectProp = Cast<UWeakObjectProperty>(InProp))
+	{
+		FString MetaClassName = WeakObjectProp->PropertyClass->GetName();
+		FString MetaClassPrefix = WeakObjectProp->PropertyClass->GetPrefixCPP();
+		BodyStr = FString::Printf(TEXT("FLuaObjectWrapper* %s_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, %d);\t%s%s* %s = (%s%s*)(%s_Wrapper->ObjInst.Get());"), *InParamName, InStackIndex, *MetaClassPrefix, *MetaClassName, *InParamName, *MetaClassPrefix, *MetaClassName, *InParamName);
+	}
+	else if (const UInterfaceProperty* InterfaceProp = Cast<UInterfaceProperty>(InProp))
+	{
+		FString MetaClassName = InterfaceProp->InterfaceClass->GetName();
+		FString InterfaceName = InterfaceProp->GetName();
+		BodyStr = FString::Printf(TEXT("FLuaInterfaceWrapper* %s_Wrapper = (FLuaInterfaceWrapper*)lua_touserdata(InL, %d);\tTScriptInterface<I%s>& %s = *(TScriptInterface<I%s>*)%s_Wrapper->InterfaceInst;"), *InParamName, InStackIndex, *MetaClassName, *InParamName, *MetaClassName, *InParamName);
+	}
+	else if (const UDelegateProperty* DelegateProp = Cast<UDelegateProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("FLuaDelegateWrapper* %s_Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, %d);\tFScriptDelegate& %s = *(FScriptDelegate*)%s_Wrapper->DelegateInst;"), *InParamName, InStackIndex, *InParamName, *InParamName);
+	}
+	else if (const UMulticastDelegateProperty* MultiDelegateProp = Cast<UMulticastDelegateProperty>(InProp))
+	{
+		BodyStr = FString::Printf(TEXT("FLuaDelegateWrapper* %s_Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, %d);\tFMulticastScriptDelegate& %s = *(FMulticastScriptDelegate*)%s_Wrapper->DelegateInst;"), *InParamName, InStackIndex, *InParamName, *InParamName);
+	}
+	else if (const UArrayProperty* ArrayProp = Cast<UArrayProperty>(InProp))
+	{
+		FString ElementTypeName = FastLuaHelper::GetPropertyTypeName(ArrayProp->Inner);
+
+		FString PointerFlag;
+		if (FastLuaHelper::IsPointerType(ElementTypeName))
+		{
+			PointerFlag = FString("*");
+		}
+
+		FString NewElement = FString::Printf(TEXT("%s"), *GenerateFetchPropertyStr(ArrayProp->Inner, FString::Printf(TEXT("Temp_NewElement")), -1));
+
+		BodyStr = FString::Printf(TEXT("TArray<%s%s> %s;\n\t{\n\tif(lua_istable(InL, %d))\n\t{\n\tlua_pushnil(InL);\n\twhile(lua_next(InL, -2))\n\t{\n\t %s \n\t%s.Add(Temp_NewElement);\n\tlua_pop(InL, 1); \n\t}\n\t}  \n\t}"), *ElementTypeName, *PointerFlag, *InParamName, InStackIndex, *NewElement, *InParamName);
+	}
+	else if (const UMapProperty* MapProp = Cast<UMapProperty>(InProp))
+	{
+		FString KeyTypeName = FastLuaHelper::GetPropertyTypeName(MapProp->KeyProp);
+
+		FString KeyPointerFlag;
+		if (FastLuaHelper::IsPointerType(KeyTypeName))
+		{
+			KeyPointerFlag = FString("*");
+		}
+
+		FString ValueTypeName = FastLuaHelper::GetPropertyTypeName(MapProp->ValueProp);
+
+		FString ValuePointerFlag;
+		if (FastLuaHelper::IsPointerType(ValueTypeName))
+		{
+			ValuePointerFlag = FString("*");
+		}
+
+		FString NewKeyElement = FString::Printf(TEXT("%s"), *GenerateFetchPropertyStr(MapProp->KeyProp, FString::Printf(TEXT("Temp_NewKeyElement")), -2));
+
+		FString NewValueElement = FString::Printf(TEXT("%s"), *GenerateFetchPropertyStr(MapProp->ValueProp, FString::Printf(TEXT("Temp_NewValueElement")), -1));
+
+		BodyStr = FString::Printf(TEXT("TMap<%s%s, %s%s> %s;\n\t{\n\tif(lua_istable(InL, %d))\n\t{\n\tlua_pushnil(InL);\n\twhile(lua_next(InL, -2))\n\t{\n\t%s\n\t%s \n\t%s.Add(Temp_NewKeyElement, Temp_NewValueElement);\n\tlua_pop(InL, 1); \n\t}\n\t}  \n\t}"), *KeyTypeName, *KeyPointerFlag, *ValueTypeName, *ValuePointerFlag, *InParamName, InStackIndex, *NewKeyElement, *NewValueElement, *InParamName);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("breakpoint!"));
+	}
+
+	return BodyStr;
+
 }

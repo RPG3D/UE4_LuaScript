@@ -38,7 +38,6 @@ public:
 	FastLuaUnrealWrapper(const FastLuaUnrealWrapper&) = delete;
 	FastLuaUnrealWrapper& operator=(const FastLuaUnrealWrapper&) = delete;
 
-	void RegisterProperty(lua_State* InL, const class UProperty* InProperty, bool InIsStruct = false);
 
 	static FString GenerateFunctionBodyStr(const class UFunction* InFunction, const class UClass* InClass);
 
@@ -62,6 +61,11 @@ public:
 	int32 GenerateCodeForClass(const class UClass* InClass) const;
 
 	//int32 GenerateCodeForStruct(const class UScriptStruct* InClass);
+
+
+	static FString GeneratePushPropertyStr(const UProperty* InProp, const FString& InParamName);
+	static FString GenerateFetchPropertyStr(const UProperty* InProp, const FString& InParamName, int32 InStackIndex = -1, const class UStruct* InSruct = nullptr);
+
 
 	FString CodeDirectory = FPaths::ProjectPluginsDir() / FString("FastLuaScript/Source/FastLuaScript/Generated");
 
