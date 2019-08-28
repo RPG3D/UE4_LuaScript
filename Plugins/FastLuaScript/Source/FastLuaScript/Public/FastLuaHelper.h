@@ -62,8 +62,7 @@ struct FLuaInterfaceWrapper
 {
 public:
 	ELuaUnrealWrapperType WrapperType = ELuaUnrealWrapperType::Interface;
-	class UClass* InterfaceClass = nullptr;
-	//FScriptInterface
+	class FScriptInterface* InterfaceInst = nullptr;
 };
 
 /**
@@ -82,8 +81,8 @@ public:
 	//start with U or A
 	static bool IsPointerType(const FString& InTypeName);
 
-	static void PushProperty(lua_State* InL, UProperty* InProp, void* InBuff, bool bRef = true);
-	static FString GetFetchPropertyStr(const UProperty* InProp, const FString& InParamName, int32 InStackIndex = -1);
+	static FString GeneratePushPropertyStr(const UProperty* InProp, const FString& InParamName);
+	static FString GenerateFetchPropertyStr(const UProperty* InProp, const FString& InParamName, int32 InStackIndex = -1, const class UStruct* InSruct = nullptr);
 
 	static UObject* FetchObject(lua_State* InL, int32 InIndex);
 	static void PushObject(lua_State* InL, UObject* InObj);
@@ -91,7 +90,7 @@ public:
 	static void* FetchStruct(lua_State* InL, int32 InIndex);
 	static void PushStruct(lua_State* InL, const UScriptStruct* InStruct, const void* InBuff);
 
-	static void PushDelegate(lua_State* InL, void* InDelegateProperty, void* InBuff, bool InMulti = true);
+	static void PushDelegate(lua_State* InL, void* InDelegateInst, bool InMulti = true);
 
 	static int32 GetObjectProperty(lua_State* L);
 	static int32 SetObjectProperty(lua_State* L);

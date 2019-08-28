@@ -39,7 +39,13 @@ public:
 	FastLuaUnrealWrapper& operator=(const FastLuaUnrealWrapper&) = delete;
 
 	void RegisterProperty(lua_State* InL, const class UProperty* InProperty, bool InIsStruct = false);
-	static FString GetFunctionBodyStr(const class UFunction* InFunction, const class UClass* InClass);
+
+	static FString GenerateFunctionBodyStr(const class UFunction* InFunction, const class UClass* InClass);
+
+	static FString GenerateGetPropertyStr(const class UProperty* InProperty, const FString& InParamName, const class UStruct* InStruct);
+
+	static FString GenerateSetPropertyStr(const class UProperty* InProperty, const FString& InParamName, const class UStruct* InStruct);
+
 
 	lua_State * L = nullptr;
 
@@ -47,6 +53,20 @@ public:
 	FDelegateHandle LuaTickerHandle;
 
 	bool HandleLuaTick(float InDelta);
+
+
+	int32 InitConfig();
+
+	int32 GeneratedCode() const;
+
+	int32 GenerateCodeForClass(const class UClass* InClass) const;
+
+	//int32 GenerateCodeForStruct(const class UScriptStruct* InClass);
+
+	FString CodeDirectory = FPaths::ProjectPluginsDir() / FString("FastLuaScript/Source/FastLuaScript/Generated");
+
+	TArray<FString> ModulesShouldExport;
+
 
 public:
 

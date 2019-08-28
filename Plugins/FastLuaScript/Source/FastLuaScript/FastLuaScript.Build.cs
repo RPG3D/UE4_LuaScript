@@ -27,6 +27,8 @@ public class FastLuaScript : ModuleRules
 			{
 				"Core",
                 "Engine",
+                "UMG",
+                "InputCore",
 				// ... add other public dependencies that you statically link with here ...
                 "LuaSource"
             }

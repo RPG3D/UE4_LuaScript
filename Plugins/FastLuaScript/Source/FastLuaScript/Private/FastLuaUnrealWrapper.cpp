@@ -92,7 +92,7 @@ void FastLuaUnrealWrapper::RegisterProperty(lua_State* InL, const UProperty* InP
 	}
 }
 
-FString FastLuaUnrealWrapper::GetFunctionBodyStr(const class UFunction* InFunction, const class UClass* InClass)
+FString FastLuaUnrealWrapper::GenerateFunctionBodyStr(const class UFunction* InFunction, const class UClass* InClass)
 {
 	if (InClass == nullptr || FastLuaHelper::IsScriptCallableFunction(InFunction) == false)
 	{
@@ -104,18 +104,12 @@ FString FastLuaUnrealWrapper::GetFunctionBodyStr(const class UFunction* InFuncti
 	
 	const FString FuncName = InFunction->GetName();
 	
-
 	//first line: FLuaObjectWrapper* ThisObject_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
 	FString BodyStr = FString::Printf(TEXT("\tFLuaObjectWrapper* ThisObject_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);\t%s%s* ThisObject = Cast<%s%s>(ThisObject_Wrapper->ObjInst.Get());\n"), *ClassPrefix, *ClassName, *ClassPrefix, *ClassName);
 
 	int32 LuaStackIndex = 2;
 
 	TArray<FString> InputParamNames;
-
-	if (FuncName == FString("SetSoftObjectPropertyByName"))
-	{
-		UE_LOG(LogTemp, Log, TEXT("breakpoint!"));
-	}
 
 	//fill params
 	UProperty* ReturnProp = nullptr;
@@ -132,7 +126,7 @@ FString FastLuaUnrealWrapper::GetFunctionBodyStr(const class UFunction* InFuncti
 		{
 			FString TmpParamName = FString::Printf(TEXT("Param_%d_%s"), LuaStackIndex, *PropName);
 			InputParamNames.Add(TmpParamName);
-			FString FetchPropStr = FastLuaHelper::GetFetchPropertyStr(Prop, TmpParamName, LuaStackIndex);
+			FString FetchPropStr = FastLuaHelper::GenerateFetchPropertyStr(Prop, TmpParamName, LuaStackIndex, InClass);
 			++LuaStackIndex;
 			BodyStr += FString::Printf(TEXT("\t%s\n"), *FetchPropStr);
 		}
@@ -164,8 +158,56 @@ FString FastLuaUnrealWrapper::GetFunctionBodyStr(const class UFunction* InFuncti
 
 	BodyStr += FString::Printf(TEXT("\n\t%s\n\t"), *CallFuncStr);
 
+	//push return value
+	if (ReturnProp)
+	{
+		FString PushReturnStr = FString::Printf(TEXT("%s"), *FastLuaHelper::GeneratePushPropertyStr(ReturnProp, FString("ReturnValue")));
+		BodyStr += PushReturnStr;
+	}
+
 	BodyStr += FString::Printf(TEXT("\n\treturn %d;"), ReturnProp != nullptr);
 
+	return BodyStr;
+}
+
+FString FastLuaUnrealWrapper::GenerateGetPropertyStr(const class UProperty* InProperty, const FString& InParamName, const class UStruct* InStruct)
+{
+	const FString ClassName = InStruct->GetName();
+	const FString ClassPrefix = InStruct->GetPrefixCPP();
+
+	FString BodyStr = FastLuaHelper::GenerateFetchPropertyStr(nullptr, FString("ThisObject"), 1, InStruct);
+
+	if (FastLuaHelper::IsPointerType(ClassPrefix))
+	{
+		BodyStr += FastLuaHelper::GeneratePushPropertyStr(InProperty, FString("ThisObject->") + InParamName);
+	}
+	else
+	{
+		BodyStr += FastLuaHelper::GeneratePushPropertyStr(InProperty, FString("ThisObject.") + InParamName);
+	}
+
+	BodyStr += FString("\n\treturn 1;");
+	return BodyStr;
+}
+
+FString FastLuaUnrealWrapper::GenerateSetPropertyStr(const class UProperty* InProperty, const FString& InParamName, const class UStruct* InStruct)
+{
+	const FString ClassName = InStruct->GetName();
+	const FString ClassPrefix = InStruct->GetPrefixCPP();
+
+	FString BodyStr = FastLuaHelper::GenerateFetchPropertyStr(nullptr, FString("ThisObject"), 1, InStruct);
+	BodyStr += FastLuaHelper::GenerateFetchPropertyStr(InProperty, FString("InParam_") + InParamName, 2);
+
+	if (FastLuaHelper::IsPointerType(ClassPrefix))
+	{
+		BodyStr += FString::Printf(TEXT("\n\tThisObject->%s = InParam_%s;"), *InParamName, *InParamName);
+	}
+	else
+	{
+		BodyStr += FString::Printf(TEXT("\n\tThisObject.%s = InParam_%s;"), *InParamName, *InParamName);
+	}
+
+	BodyStr += FString("\n\treturn 0;");
 	return BodyStr;
 }
 
@@ -354,5 +396,198 @@ int RequireFromUFS(lua_State* InL)
 	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
 	lua_pop(InL, 1);
 	FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(InL, -1))), 1, LuaWrapper);
+	return 0;
+}
+
+
+
+int32 FastLuaUnrealWrapper::InitConfig()
+{
+	if (FFileHelper::LoadFileToStringArray(ModulesShouldExport, *(FPaths::ProjectPluginsDir() / FString("FastLuaScript/Config/ModuleToExport.txt"))))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Read ModuleToExport.txt OK!"));
+	}
+
+	return 0;
+}
+
+int32 FastLuaUnrealWrapper::GeneratedCode() const
+{
+	for (TObjectIterator<UClass>It; It; ++It)
+	{
+		if (const UClass * Class = Cast<const UClass>(*It))
+		{
+			GenerateCodeForClass(Class);
+		}
+	}
+
+	return 0;
+}
+
+int32 FastLuaUnrealWrapper::GenerateCodeForClass(const class UClass* InClass) const
+{
+	if (InClass == nullptr)
+	{
+		return -1;
+	}
+
+	UPackage* Pkg = InClass->GetOutermost();
+	FString PkgName = Pkg->GetName();
+
+	if (InClass->HasAnyClassFlags(EClassFlags::CLASS_RequiredAPI) == false)
+	{
+		return 0;
+	}
+
+
+	/*if (InClass->GetName() == FString("BlueprintMapLibrary"))
+	{
+		UE_LOG(LogTemp, Log, TEXT("breakpoint!"));
+	}*/
+
+	bool bShouldExportModule = false;
+	for (int32 i = 0; i < ModulesShouldExport.Num(); ++i)
+	{
+		if (PkgName == ModulesShouldExport[i])
+		{
+			bShouldExportModule = true;
+			break;
+		}
+	}
+
+	if (bShouldExportModule == false)
+	{
+		return 0;
+	}
+
+	FString ClassName = InClass->GetName();
+
+	FString RawHeaderPath = InClass->GetMetaData(*FString("IncludePath"));
+
+	UE_LOG(LogTemp, Log, TEXT("Exporting: %s    %s"), *ClassName, *RawHeaderPath);
+
+	//first, generate header
+	{
+		int32 ExportedFieldCount = 0;
+
+		FString HeaderFilePath = FString::Printf(TEXT("%s/Lua_%s.h"), *CodeDirectory, *ClassName);
+
+		FString HeaderStr = FString("\n// Copyright 1998-2019 Epic Games, Inc. All Rights Reserved. \n\n#pragma once \n\n#include \"CoreMinimal.h\" \n\n");
+
+		FString ClassBeginStr = FString::Printf(TEXT("struct lua_State; \n\nstruct Lua_%s\n{\n"), *ClassName);
+		HeaderStr += ClassBeginStr;
+
+
+		for (TFieldIterator<const UFunction> It(InClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
+		{
+			if (FastLuaHelper::IsScriptCallableFunction(*It) == false)
+			{
+				continue;
+			}
+			++ExportedFieldCount;
+
+			FString FuncName = It->GetName();
+			FString FuncDeclareStr = FString::Printf(TEXT("\tstatic int32 Lua_%s(lua_State* InL);\n\n"), *FuncName);
+			HeaderStr += FuncDeclareStr;
+		}
+
+		for (TFieldIterator<const UProperty> It(InClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
+		{
+			if (FastLuaHelper::IsScriptReadableProperty(*It) == false)
+			{
+				continue;
+			}
+			++ExportedFieldCount;
+
+			FString PropName = It->GetName();
+
+			FString PropGetDeclareStr = FString::Printf(TEXT("\tstatic int32 Lua_Get_%s(lua_State* InL);\n"), *PropName);
+			HeaderStr += PropGetDeclareStr;
+
+			FString PropSetDeclareStr = FString::Printf(TEXT("\tstatic int32 Lua_Set_%s(lua_State* InL);\n\n"), *PropName);
+			HeaderStr += PropSetDeclareStr;
+		}
+
+		if (ExportedFieldCount < 1)
+		{
+			return 0;
+		}
+
+		FString ClassEndStr = FString("\n};\n");
+		HeaderStr += ClassEndStr;
+
+		FFileHelper::SaveStringToFile(HeaderStr, *HeaderFilePath);
+
+	}
+
+	//second, generate source
+	{
+		FString SourceFilePath = FString::Printf(TEXT("%s/Lua_%s.cpp"), *CodeDirectory, *ClassName);
+
+		FString SourceStr = FString("\n// Copyright 1998-2019 Epic Games, Inc. All Rights Reserved. \n\n");
+		FString ClassBeginStr = FString::Printf(TEXT("#include \"Lua_%s.h\" \n\n#include \"lua/lua.hpp\" \n\n#include \"FastLuaHelper.h\"  \n\n#include \"CoreMinimal.h\" \n\n"), *ClassName);
+
+		if (RawHeaderPath.IsEmpty() == false)
+		{
+			ClassBeginStr += FString::Printf(TEXT("#include \"%s\"\n\n"), *RawHeaderPath);
+		}
+
+		SourceStr += ClassBeginStr;
+
+
+		for (TFieldIterator<const UFunction> It(InClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
+		{
+			if (FastLuaHelper::IsScriptCallableFunction(*It) == false)
+			{
+				continue;
+			}
+
+
+			FString FuncName = It->GetName();
+			FString FuncBeginStr = FString::Printf(TEXT("int32 Lua_%s::Lua_%s(lua_State* InL)\n{\n"), *ClassName, *FuncName);
+			SourceStr += FuncBeginStr;
+
+			FString FuncBodyStr = FastLuaUnrealWrapper::GenerateFunctionBodyStr(*It, InClass);
+
+			SourceStr += FuncBodyStr;
+
+			FString FuncEndStr = FString("\n\n}\n\n");
+			SourceStr += FuncEndStr;
+		}
+
+		for (TFieldIterator<const UProperty> It(InClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
+		{
+			if (FastLuaHelper::IsScriptReadableProperty(*It) == false)
+			{
+				continue;
+			}
+
+			FString PropName = It->GetName();
+
+			FString PropGetDefineBeginStr = FString::Printf(TEXT("int32 Lua_%s::Lua_Get_%s(lua_State* InL)\n{\n"), *ClassName, *PropName);
+			SourceStr += PropGetDefineBeginStr;
+
+			FString GetBodyStr = FastLuaUnrealWrapper::GenerateGetPropertyStr(*It, PropName, InClass);
+			SourceStr += GetBodyStr;
+
+			FString PropGetEndStr = FString("\n\n}\n\n");
+			SourceStr += PropGetEndStr;
+
+
+
+			FString PropSetDefineBeginStr = FString::Printf(TEXT("int32 Lua_%s::Lua_Set_%s(lua_State* InL)\n{\n"), *ClassName, *PropName);
+			SourceStr += PropSetDefineBeginStr;
+
+			FString SetBodyStr = FastLuaUnrealWrapper::GenerateSetPropertyStr(*It, PropName, InClass);
+			SourceStr += SetBodyStr;
+
+			FString PropSetEndStr = FString("\n\n}\n\n");
+			SourceStr += PropSetEndStr;
+		}
+
+		FFileHelper::SaveStringToFile(SourceStr, *SourceFilePath);
+
+	}
+
 	return 0;
 }

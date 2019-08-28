@@ -1,5 +1,5 @@
-Core
-CoreUObject
-Engine
-UMG
-Slate
+/Script/Core
+/Script/CoreUObject
+/Script/Engine
+/Script/UMG
+/Script/Slate
