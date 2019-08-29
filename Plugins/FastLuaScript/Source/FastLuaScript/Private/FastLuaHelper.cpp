@@ -281,11 +281,11 @@ void FastLuaHelper::PushDelegate(lua_State* InL, void* InDelegateInst, bool InMu
 
 	if (bValid)
 	{
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+		/*lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
 		FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
 		lua_pop(InL, 1);
 		lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->DelegateMetatableIndex);
-		lua_setmetatable(InL, -2);
+		lua_setmetatable(InL, -2);*/
 	}
 }
 
@@ -367,13 +367,13 @@ void* FastLuaHelper::LuaAlloc(void* ud, void* ptr, size_t osize, size_t nsize)
 	else
 	{
 		ptr = FMemory::Realloc(ptr, nsize);
-		if (Inst && Inst->bStatMemory && Inst->GetLuaSate())
-		{
-			int k = lua_gc(Inst->GetLuaSate(), LUA_GCCOUNT);
-			int b = lua_gc(Inst->GetLuaSate(), LUA_GCCOUNTB);
-			Inst->LuaMemory = (k << 10) + b;
+		//if (Inst && Inst->bStatMemory && Inst->GetLuaSate())
+		//{
+			//int k = lua_gc(Inst->GetLuaSate(), LUA_GCCOUNT);
+			//int b = lua_gc(Inst->GetLuaSate(), LUA_GCCOUNTB);
+			//Inst->LuaMemory = (k << 10) + b;
 			//SET_MEMORY_STAT(STAT_LuaMemory, Inst->LuaMemory);
-		}
+		//}
 		return ptr;
 	}
 }
@@ -383,7 +383,7 @@ void FastLuaHelper::LuaLog(const FString& InLog, int32 InLevel, FastLuaUnrealWra
 	FString Str = InLog;
 	if (InLuaWrapper)
 	{
-		Str = FString("[") + InLuaWrapper->LuaStateName + FString("]") + Str;
+		Str = FString("[") + InLuaWrapper->GetInstanceName() + FString("]") + Str;
 	}
 	switch (InLevel)
 	{
@@ -443,7 +443,7 @@ int FastLuaHelper::LuaGetGameInstance(lua_State* InL)
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
 	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
 	lua_pop(InL, 1);
-	FastLuaHelper::PushObject(InL, LuaWrapper->CachedGameInstance);
+	FastLuaHelper::PushObject(InL, LuaWrapper->GetGameInstance());
 	return 1;
 }
 

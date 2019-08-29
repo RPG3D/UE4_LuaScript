@@ -3,3 +3,4 @@
 /Script/Engine
 /Script/UMG
 /Script/Slate
+/Script/UE4_LuaScript

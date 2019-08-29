@@ -14,7 +14,7 @@ class UGameDatabase;
  * 
  */
 UCLASS(Blueprintable, BlueprintType)
-class UTestInstance : public UGameInstance
+class UE4_LUASCRIPT_API UTestInstance : public UGameInstance
 {
 	GENERATED_BODY()
 public:

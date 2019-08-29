@@ -4,7 +4,7 @@
 #include "Engine/Engine.h"
 #include "UObjectGlobals.h"
 #include "FastLuaUnrealWrapper.h"
-#include "Generated/FastLuaAPI.h"
+//#include "Generated/FastLuaAPI.h"
 
 void UTestInstance::Init()
 {
@@ -34,7 +34,7 @@ void UTestInstance::RunGameScript()
 		LuaWrapper = FastLuaUnrealWrapper::Create(this);
 	}
 
-	FastLuaAPI::RegisterUnrealClass(LuaWrapper->GetLuaSate());
+	//FastLuaAPI::RegisterUnrealClass(LuaWrapper->GetLuaSate());
 	LuaWrapper->RunMainFunction();
 }
 
