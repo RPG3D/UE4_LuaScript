@@ -96,6 +96,7 @@ public:
 	//0 log  1 warning 2 error
 	static void LuaLog(const FString& InLog, int32 InLevel = 0, class FastLuaUnrealWrapper* InLuaWrapper = nullptr);
 
+	static void FixClassMetatable(lua_State* InL, TArray<const UClass*> InRegistedClassList);
 
 	static int LuaGetGameInstance(lua_State* L);
 	static int LuaLoadObject(lua_State* Inl);

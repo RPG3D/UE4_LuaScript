@@ -18,7 +18,8 @@ public class FastLuaScript : ModuleRules
 		PrivateIncludePaths.AddRange(
 			new string[] {
 				// ... add other private include paths required here ...
-			}
+                "Generated"
+            }
 			);
 			
 		
@@ -42,8 +43,8 @@ public class FastLuaScript : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
-				// ... add private dependencies that you statically link with here ...	
-			}
+				// ... add private dependencies that you statically link with here ...
+            }
 			);
 		
 		

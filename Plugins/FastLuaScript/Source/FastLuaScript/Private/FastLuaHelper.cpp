@@ -32,7 +32,21 @@ bool FastLuaHelper::HasScriptAccessibleField(const UStruct* InStruct)
 
 bool FastLuaHelper::IsScriptCallableFunction(const UFunction* InFunction)
 {
-	return InFunction && InFunction->HasAllFunctionFlags(FUNC_BlueprintCallable | FUNC_Public);
+	bool bScriptCallable = InFunction && InFunction->HasAllFunctionFlags(FUNC_BlueprintCallable | FUNC_Public);
+	if (bScriptCallable)
+	{
+		TMap<FName, FString> MetaDataList = *UMetaData::GetMapForObject(InFunction);
+		if (MetaDataList.Find(FName("CustomThunk")) == nullptr)
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	return false;
 }
 
 bool FastLuaHelper::IsScriptReadableProperty(const UProperty* InProperty)
@@ -399,6 +413,39 @@ void FastLuaHelper::LuaLog(const FString& InLog, int32 InLevel, FastLuaUnrealWra
 
 }
 
+
+void FastLuaHelper::FixClassMetatable(lua_State* InL, TArray<const UClass*> InRegistedClassList)
+{
+	for (int32 i = 0; i < InRegistedClassList.Num(); ++i)
+	{
+		//fix metatable.__index = metatable
+		lua_rawgetp(InL, LUA_REGISTRYINDEX, (const void*)InRegistedClassList[i]);
+		if (lua_istable(InL, -1))
+		{
+			lua_pushvalue(InL, -1);
+			lua_setfield(InL, -2, "__index");
+		}
+		else
+		{
+			lua_pop(InL, 1);
+			continue;
+		}
+
+		UClass* SuperClass = InRegistedClassList[i]->GetSuperClass();
+		if (SuperClass)
+		{
+			lua_rawgetp(InL, LUA_REGISTRYINDEX, (const void*)InRegistedClassList[i]);
+			if (lua_istable(InL, -1))
+			{
+				lua_setmetatable(InL, -2);
+			}
+			else
+			{
+				lua_pop(InL, 1);
+			}
+		}
+	}
+}
 
 int FastLuaHelper::LuaGetGameInstance(lua_State* InL)
 {
