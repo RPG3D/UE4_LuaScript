@@ -3,8 +3,8 @@
 #include "TestInstance.h"
 #include "Engine/Engine.h"
 #include "UObjectGlobals.h"
-#include "LuaUnrealWrapper.h"
-
+#include "FastLuaUnrealWrapper.h"
+#include "Generated/FastLuaAPI.h"
 
 void UTestInstance::Init()
 {
@@ -31,10 +31,10 @@ void UTestInstance::RunGameScript()
 {
 	if (LuaWrapper.IsValid() == false)
 	{
-		LuaWrapper = FLuaUnrealWrapper::Create(this);
+		LuaWrapper = FastLuaUnrealWrapper::Create(this);
 	}
-	LuaWrapper->Init(this);
 
+	FastLuaAPI::RegisterUnrealClass(LuaWrapper->GetLuaSate());
 	LuaWrapper->RunMainFunction();
 }
 

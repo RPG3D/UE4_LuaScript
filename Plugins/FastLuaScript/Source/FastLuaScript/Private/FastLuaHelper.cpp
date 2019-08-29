@@ -205,21 +205,15 @@ void FastLuaHelper::PushObject(lua_State* InL, UObject* InObj)
 		const UClass* Class = InObj->GetClass();
 
 		//SCOPE_CYCLE_COUNTER(STAT_FindClassMetatable);
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-		FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
-		lua_pop(InL, 1);
-		lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->ClassMetatableIdx);
-		lua_rawgetp(InL, -1, Class);
+		lua_rawgetp(InL, LUA_REGISTRYINDEX, Class);
 		if (lua_istable(InL, -1))
 		{
-			lua_setmetatable(InL, -3);
+			lua_setmetatable(InL, -2);
 		}
 		else
 		{
 			lua_pop(InL, 1);
 		}
-
-		lua_pop(InL, 1);
 	}
 }
 
@@ -244,15 +238,10 @@ void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, co
 	InStruct->CopyScriptStruct(&(Wrapper->StructInst), InBuff);
 
 	//SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
-	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
-	lua_pop(InL, 1);
-	lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->StructMetatableIdx);
-	lua_rawgetp(InL,-1, InStruct);
+	lua_rawgetp(InL, LUA_REGISTRYINDEX, InStruct);
 	if (lua_istable(InL, -1))
 	{
 		lua_setmetatable(InL, -3);
-		lua_pop(InL, 1);
 	}
 	else
 	{
@@ -434,7 +423,7 @@ void FastLuaHelper::FixClassMetatable(lua_State* InL, TArray<const UClass*> InRe
 		UClass* SuperClass = InRegistedClassList[i]->GetSuperClass();
 		if (SuperClass)
 		{
-			lua_rawgetp(InL, LUA_REGISTRYINDEX, (const void*)InRegistedClassList[i]);
+			lua_rawgetp(InL, LUA_REGISTRYINDEX, (const void*)SuperClass);
 			if (lua_istable(InL, -1))
 			{
 				lua_setmetatable(InL, -2);
@@ -444,6 +433,8 @@ void FastLuaHelper::FixClassMetatable(lua_State* InL, TArray<const UClass*> InRe
 				lua_pop(InL, 1);
 			}
 		}
+
+		lua_pop(InL, 1);
 	}
 }
 

@@ -8,7 +8,7 @@ public class UE4_LuaScript : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "LuaSource", "LuaScript" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "LuaSource", "FastLuaScript" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 

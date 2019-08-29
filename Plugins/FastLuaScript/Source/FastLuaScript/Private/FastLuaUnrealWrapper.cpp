@@ -144,13 +144,43 @@ TSharedPtr<FastLuaUnrealWrapper> FastLuaUnrealWrapper::Create(class UGameInstanc
 
 void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 {
-	if (L == nullptr)
+	if (L != nullptr)
 	{
-		L = lua_newstate(FastLuaHelper::LuaAlloc, this);
-		luaL_openlibs(L);
+		return;
+	}
 
-		lua_pushlightuserdata(L, this);
-		lua_rawsetp(L, LUA_REGISTRYINDEX, L);
+	L = lua_newstate(FastLuaHelper::LuaAlloc, this);
+	luaL_openlibs(L);
+
+	lua_pushlightuserdata(L, this);
+	lua_rawsetp(L, LUA_REGISTRYINDEX, L);
+
+	if (InGameInstance)
+	{
+		CachedGameInstance = InGameInstance;
+	}
+
+	luaL_requiref(L, "Unreal", InitUnrealLib, 1);
+
+	RegisterRawAPI(L);
+
+	//set package path
+	{
+		FString LuaEnvPath = FPaths::ProjectDir() / FString("LuaScript/?.lua") + FString(";") + FPaths::ProjectDir() / FString("LuaScript/?/Init.lua");
+		lua_getglobal(L, "package");
+		FString RetString = UTF8_TO_TCHAR(lua_pushstring(L, TCHAR_TO_UTF8(*LuaEnvPath)));
+		lua_setfield(L, -2, "path");
+		lua_pop(L, 1);
+	}
+	//set searcher
+	{
+		int32 tp = lua_gettop(L);
+		int32 ret = lua_getglobal(L, "package");
+		lua_getfield(L, -1, "searchers");
+		int32 FunctionNum = luaL_len(L, -1);
+		lua_pushcfunction(L, RequireFromUFS);
+		lua_rawseti(L, -2, FunctionNum + 1);
+		lua_settop(L, tp);
 	}
 }
 
@@ -402,7 +432,7 @@ int32 FastLuaUnrealWrapper::GeneratedCode() const
 	{
 		FString APIHeaderPath = CodeDirectory / FString("FastLuaAPI.h");
 		FString HeaderStr = FString("\n// Copyright 1998-2019 Epic Games, Inc. All Rights Reserved. \n\n#pragma once \n\n#include \"CoreMinimal.h\" \n\n");
-		HeaderStr += FString::Printf(TEXT("struct FastLuaAPI\n{\n"));
+		HeaderStr += FString::Printf(TEXT("struct FASTLUASCRIPT_API FastLuaAPI\n{\n"));
 		HeaderStr += FString("\tstatic int32 RegisterUnrealClass(struct lua_State* InL);\n\n");
 		HeaderStr += FString("\tstatic int32 RegisterUnrealStruct(struct lua_State* InL);\n\n");
 		HeaderStr += FString("};\n");
