@@ -97,6 +97,7 @@ public:
 	static void LuaLog(const FString& InLog, int32 InLevel = 0, class FastLuaUnrealWrapper* InLuaWrapper = nullptr);
 
 	static void FixClassMetatable(lua_State* InL, TArray<const UClass*> InRegistedClassList);
+	static void FixStructMetatable(lua_State* InL, TArray<const UScriptStruct*> InRegistedStructList);
 
 	static int LuaGetGameInstance(lua_State* L);
 	static int LuaLoadObject(lua_State* Inl);

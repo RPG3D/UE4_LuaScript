@@ -52,8 +52,21 @@ bool FastLuaHelper::IsScriptCallableFunction(const UFunction* InFunction)
 bool FastLuaHelper::IsScriptReadableProperty(const UProperty* InProperty)
 {
 	const uint64 ReadableFlags = CPF_BlueprintAssignable | CPF_BlueprintVisible | CPF_InstancedReference;
+	bool bScriptReadable = InProperty && InProperty->HasAnyPropertyFlags(ReadableFlags) && InProperty->HasAllPropertyFlags(CPF_NativeAccessSpecifierPublic) && !InProperty->HasAnyPropertyFlags(CPF_Deprecated);
+	if (bScriptReadable)
+	{
+		TMap<FName, FString> MetaDataList = *UMetaData::GetMapForObject(InProperty);
+		if (MetaDataList.Find(FName("DeprecationMessage")) == nullptr)
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
 
-	return InProperty && InProperty->HasAnyPropertyFlags(ReadableFlags) && InProperty->HasAnyPropertyFlags(CPF_NativeAccessSpecifierPublic) && (InProperty->HasAnyPropertyFlags(CPF_Deprecated) == false);
+	return false;
 }
 
 FString FastLuaHelper::GetPropertyTypeName(const UProperty* InProp)
@@ -241,11 +254,11 @@ void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, co
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InStruct);
 	if (lua_istable(InL, -1))
 	{
-		lua_setmetatable(InL, -3);
+		lua_setmetatable(InL, -2);
 	}
 	else
 	{
-		lua_pop(InL, 2);
+		lua_pop(InL, 1);
 	}
 }
 
@@ -432,6 +445,22 @@ void FastLuaHelper::FixClassMetatable(lua_State* InL, TArray<const UClass*> InRe
 			{
 				lua_pop(InL, 1);
 			}
+		}
+
+		lua_pop(InL, 1);
+	}
+}
+
+void FastLuaHelper::FixStructMetatable(lua_State* InL, TArray<const UScriptStruct*> InRegistedStructList)
+{
+	for (int32 i = 0; i < InRegistedStructList.Num(); ++i)
+	{
+		//fix metatable.__index = metatable
+		lua_rawgetp(InL, LUA_REGISTRYINDEX, (const void*)InRegistedStructList[i]);
+		if (lua_istable(InL, -1))
+		{
+			lua_pushvalue(InL, -1);
+			lua_setfield(InL, -2, "__index");
 		}
 
 		lua_pop(InL, 1);

@@ -20,7 +20,7 @@ public class XQCodeGenerator : ModuleRules
             }
             );
 
-        PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "LevelEditor", "UnrealEd", "FastLuaScript", "UE4_LuaScript" });
+        PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "LevelEditor", "UnrealEd", "FastLuaScript"});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 

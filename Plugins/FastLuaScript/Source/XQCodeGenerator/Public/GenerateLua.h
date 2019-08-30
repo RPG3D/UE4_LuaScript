@@ -21,16 +21,21 @@ public:
 
 	int32 GenerateCodeForClass(const class UClass* InClass) const;
 
-	//int32 GenerateCodeForStruct(const class UScriptStruct* InClass) const;
+	int32 GenerateCodeForStruct(const class UScriptStruct* InStruct) const;
 
 
 	static FString GeneratePushPropertyStr(const UProperty* InProp, const FString& InParamName);
 	static FString GenerateFetchPropertyStr(const UProperty* InProp, const FString& InParamName, int32 InStackIndex = -1, const class UStruct* InSruct = nullptr);
 
-	static TArray<FString> CollectHeaderFilesReferencedByClass(const class UClass* InClass);
+	static TArray<FString> CollectHeaderFilesReferencedByClass(const class UStruct* InClass);
 
+protected:
 	FString CodeDirectory = FPaths::ProjectPluginsDir() / FString("FastLuaScript/Source/FastLuaScript/Generated");
 
 	TArray<FString> ModulesShouldExport;
+
+	TArray<FString> StructsToExport;
+
+	TArray<FString> IgnoredFunctions;
 
 };
