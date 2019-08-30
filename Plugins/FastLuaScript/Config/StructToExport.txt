@@ -1,3 +1,0 @@
-Vector
-Vector2D
-Vector4D

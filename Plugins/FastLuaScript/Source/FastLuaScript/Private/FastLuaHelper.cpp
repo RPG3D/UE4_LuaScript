@@ -470,6 +470,25 @@ void FastLuaHelper::FixStructMetatable(lua_State* InL, TArray<const UScriptStruc
 			lua_pushvalue(InL, -1);
 			lua_setfield(InL, -2, "__index");
 		}
+		else
+		{
+			lua_pop(InL, 1);
+			continue;
+		}
+
+		UScriptStruct* SuperStruct = Cast<UScriptStruct>(InRegistedStructList[i]->GetSuperStruct());
+		if (SuperStruct)
+		{
+			lua_rawgetp(InL, LUA_REGISTRYINDEX, (const void*)SuperStruct);
+			if (lua_istable(InL, -1))
+			{
+				lua_setmetatable(InL, -2);
+			}
+			else
+			{
+				lua_pop(InL, 1);
+			}
+		}
 
 		lua_pop(InL, 1);
 	}
@@ -579,6 +598,34 @@ int FastLuaHelper::LuaNewObject(lua_State* InL)
 	return 1;
 }
 
+
+int FastLuaHelper::LuaNewStruct(lua_State* InL)
+{
+	FString StructName = UTF8_TO_TCHAR(lua_tostring(InL, 1));
+	UScriptStruct* StructClass = FindObject<UScriptStruct>(ANY_PACKAGE, *StructName);
+	if (StructClass == nullptr)
+	{
+		lua_pushnil(InL);
+	}
+	else
+	{
+		FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper) + StructClass->GetStructureSize());
+		StructWrapper->StructType = StructClass;
+		StructWrapper->WrapperType = ELuaUnrealWrapperType::Struct;
+		StructClass->InitializeDefaultValue((uint8*)(&StructWrapper->StructInst));
+
+		lua_rawgetp(InL, LUA_REGISTRYINDEX, StructClass);
+		if (lua_istable(InL, -1))
+		{
+			lua_setmetatable(InL, -2);
+		}
+		else
+		{
+			lua_pop(InL, 1);
+		}
+	}
+	return 1;
+}
 
 //Lua usage: GameSingleton:GetGameEvent():GetOnPostLoadMap():Call(0)
 int FastLuaHelper::LuaCallUnrealDelegate(lua_State* InL)

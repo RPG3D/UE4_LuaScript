@@ -104,6 +104,7 @@ public:
 	static int LuaLoadClass(lua_State*);
 	static int LuaGetUnrealCDO(lua_State* InL);//get unreal class default object
 	static int LuaNewObject(lua_State* InL);
+	static int LuaNewStruct(lua_State* InL);
 	static int LuaCallUnrealDelegate(lua_State* InL);
 	static int PrintLog(lua_State* L);
 };

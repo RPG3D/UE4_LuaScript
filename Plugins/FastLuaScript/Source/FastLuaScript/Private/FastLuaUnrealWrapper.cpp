@@ -21,6 +21,7 @@ static int InitUnrealLib(lua_State* L)
 		{"LuaLoadClass", FastLuaHelper::LuaLoadClass},
 		{"LuaGetUnrealCDO", FastLuaHelper::LuaGetUnrealCDO},
 		{"LuaNewObject", FastLuaHelper::LuaNewObject},
+		{"LuaNewStruct", FastLuaHelper::LuaNewStruct},
 		{nullptr, nullptr}
 	};
 

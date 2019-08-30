@@ -34,7 +34,7 @@ protected:
 
 	TArray<FString> ModulesShouldExport;
 
-	TArray<FString> StructsToExport;
+	TArray<FString> IgnoredClass;
 
 	TArray<FString> IgnoredFunctions;
 

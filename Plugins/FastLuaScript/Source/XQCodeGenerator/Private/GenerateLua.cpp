@@ -158,9 +158,9 @@ int32 GenerateLua::InitConfig()
 		UE_LOG(LogTemp, Warning, TEXT("Read ModuleToExport.txt OK!"));
 	}
 
-	if (FFileHelper::LoadFileToStringArray(StructsToExport, *(FPaths::ProjectPluginsDir() / FString("FastLuaScript/Config/StructToExport.txt"))))
+	if (FFileHelper::LoadFileToStringArray(IgnoredClass, *(FPaths::ProjectPluginsDir() / FString("FastLuaScript/Config/IgnoredClass.txt"))))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Read StructToExport.txt OK!"));
+		UE_LOG(LogTemp, Warning, TEXT("Read IgnoredClass.txt OK!"));
 	}
 
 	if (FFileHelper::LoadFileToStringArray(IgnoredFunctions, *(FPaths::ProjectPluginsDir() / FString("FastLuaScript/Config/IgnoredFunction.txt"))))
@@ -190,9 +190,9 @@ int32 GenerateLua::GeneratedCode() const
 
 
 	TMap<FString, const UScriptStruct*> AllGeneratedStruct;
-	for (int32 i = 0; i < StructsToExport.Num(); ++i)
+	for (TObjectIterator<UScriptStruct>It; It; ++It)
 	{
-		const UScriptStruct* Struct = FindObject<UScriptStruct>(ANY_PACKAGE, *StructsToExport[i]);
+		const UScriptStruct* Struct = *It;
 		if (GenerateCodeForStruct(Struct) == 0)
 		{
 			AllGeneratedStruct.Add(Struct->GetName(), Struct);
@@ -312,7 +312,7 @@ int32 GenerateLua::GenerateCodeForClass(const class UClass* InClass) const
 
 	FString RawHeaderPath = InClass->GetMetaData(*FString("IncludePath"));
 
-	UE_LOG(LogTemp, Log, TEXT("Exporting: %s    %s"), *ClassName, *RawHeaderPath);
+	//UE_LOG(LogTemp, Log, TEXT("Exporting: %s    %s"), *ClassName, *RawHeaderPath);
 
 	TMap<FString, FString> FunctionList;
 
@@ -499,17 +499,18 @@ int32 GenerateLua::GenerateCodeForStruct(const class UScriptStruct* InStruct) co
 
 	UPackage* Pkg = InStruct->GetOutermost();
 	FString PkgName = Pkg->GetName();
+	FString StructName = InStruct->GetName();
 
 	/*if (InStruct->HasAnyClassFlags(EClassFlags::CLASS_RequiredAPI) == false)
 	{
 		return -1;
 	}*/
 
-	if (InStruct->GetName() == FString("PrimaryAssetType"))
+	/*if (StructName == FString("PrimaryAssetType"))
 	{
 		TMap<FName, FString> MetaDataList = *UMetaData::GetMapForObject(InStruct);
 		UE_LOG(LogTemp, Log, TEXT("breakpoint!"));
-	}
+	}*/
 
 	bool bShouldExportModule = false;
 	for (int32 i = 0; i < ModulesShouldExport.Num(); ++i)
@@ -521,16 +522,17 @@ int32 GenerateLua::GenerateCodeForStruct(const class UScriptStruct* InStruct) co
 		}
 	}
 
+	bShouldExportModule = bShouldExportModule && (IgnoredClass.Find(StructName) < 0);
+
 	if (bShouldExportModule == false)
 	{
 		return -1;
 	}
 
-	FString StructName = InStruct->GetName();
 
 	FString RawHeaderPath = InStruct->GetMetaData(*FString("ModuleRelativePath"));
 
-	UE_LOG(LogTemp, Log, TEXT("Exporting: %s    %s"), *StructName, *RawHeaderPath);
+	//UE_LOG(LogTemp, Log, TEXT("Exporting: %s    %s"), *StructName, *RawHeaderPath);
 
 	TMap<FString, FString> FunctionList;
 
@@ -727,7 +729,7 @@ FString GenerateLua::GeneratePushPropertyStr(const UProperty* InProp, const FStr
 	}
 	else if (const UMapProperty* MapProp = Cast<UMapProperty>(InProp))
 	{
-		BodyStr = FString::Printf(TEXT("lua_newtable(InL);  \n\tfor(auto& It : %s) \n\t{ \n\t\t%s \n\t\t%s \n\t\tlua_rawset(InL, -3); \n\t}"), *InParamName, *GeneratePushPropertyStr(MapProp->KeyProp, FString("It->Key")), *GeneratePushPropertyStr(MapProp->ValueProp, FString("It->Value")));
+		BodyStr = FString::Printf(TEXT("lua_newtable(InL);  \n\tfor(auto& It : %s) \n\t{ \n\t\t%s \n\t\t%s \n\t\tlua_rawset(InL, -3); \n\t}"), *InParamName, *GeneratePushPropertyStr(MapProp->KeyProp, FString("It.Key")), *GeneratePushPropertyStr(MapProp->ValueProp, FString("It.Value")));
 	}
 
 	return BodyStr;

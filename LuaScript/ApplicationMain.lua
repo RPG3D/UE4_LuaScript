@@ -13,29 +13,20 @@ function Main()
 
 	print(("----------Lua Ram: %.2fMB----------"):format(collectgarbage("count") / 1024))
 	
-	local Vec = KismetMathLibrary:MakeVector(1, 2, 3)
-	
 	local G_GameInstance = Unreal.LuaGetGameInstance()
 	
 	G_GameInstance:RunLuaCode('print(12321324)')
 	
 	local PlayerCtrl = GameplayStatics:GetPlayerController(G_GameInstance, 0) or PlayerController
-	print(Vec:Get_Y())
-	Vec:Set_Z(222)
-	PlayerCtrl:K2_SetActorLocation(Vec, false, nil, true)
 	
-	Tags = 
-	{
-		'lxq', 'unreal', 'game'
-	}
+	local Plane = Unreal.LuaNewStruct('Plane')
+	local x = Plane:Get_X()
+	print(x)
+	Plane:Set_X(1111)
+	x = Plane:Get_X()
+	print(x)
 	
-	PlayerCtrl:Set_Tags(Tags)
-	
-	local NewTags = PlayerCtrl:Get_Tags()
-	print(#NewTags)
-	
-	
-	local com = PlayerCtrl:GetComponentByClass(Unreal.LuaLoadClass(G_GameInstance, 'SceneComponent'))
+	print(Plane:Get_Z())
 end
 
 
