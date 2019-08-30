@@ -34,5 +34,11 @@ function Main()
 	local NewTags = PlayerCtrl:Get_Tags()
 	print(#NewTags)
 	
+	
+	for i = 1, 10 do
+		local test = KismetMathLibrary:MakeVector(i, i + 1, i + 2)
+	end
+	
 end
+
 

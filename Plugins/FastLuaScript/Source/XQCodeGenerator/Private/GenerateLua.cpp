@@ -695,7 +695,7 @@ FString GenerateLua::GeneratePushPropertyStr(const UProperty* InProp, const FStr
 	else if (const UStructProperty* StructProp = Cast<UStructProperty>(InProp))
 	{
 		FString StructName = StructProp->Struct->GetName();
-		BodyStr = FString::Printf(TEXT("FastLuaHelper::PushStruct(InL, (UScriptStruct*)FindObject<UScriptStruct>(ANY_PACKAGE, *FString(\"%s\")), &%s);"), *StructName, *InParamName);
+		BodyStr = FString::Printf(TEXT("static UScriptStruct* _StructMetaClass = FindObject<UScriptStruct>(ANY_PACKAGE, *FString(\"%s\")); \n\tFastLuaHelper::PushStruct(InL, _StructMetaClass, &%s);"), *StructName, *InParamName);
 	}
 	else if (const UClassProperty* ClassProp = Cast<UClassProperty>(InProp))
 	{
