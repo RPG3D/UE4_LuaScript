@@ -32,9 +32,13 @@ bool FastLuaHelper::HasScriptAccessibleField(const UStruct* InStruct)
 
 bool FastLuaHelper::IsScriptCallableFunction(const UFunction* InFunction)
 {
-	bool bScriptCallable = InFunction && InFunction->HasAllFunctionFlags(FUNC_BlueprintCallable | FUNC_Public);
+	bool bScriptCallable = InFunction && InFunction->HasAllFunctionFlags(FUNC_BlueprintCallable | FUNC_Public) && !InFunction->HasAnyFunctionFlags(FUNC_EditorOnly);
 	if (bScriptCallable)
 	{
+		/*if (InFunction->GetName() == FString("IsHiddenEdAtStartup"))
+		{
+			UE_LOG(LogTemp, Log, TEXT("Breakpoint!"));
+		}*/
 		TMap<FName, FString> MetaDataList = *UMetaData::GetMapForObject(InFunction);
 		if (MetaDataList.Find(FName("CustomThunk")) == nullptr)
 		{
@@ -472,7 +476,7 @@ int FastLuaHelper::LuaGetGameInstance(lua_State* InL)
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
 	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
 	lua_pop(InL, 1);
-	FastLuaHelper::PushObject(InL, LuaWrapper->GetGameInstance());
+	FastLuaHelper::PushObject(InL, (UObject*)LuaWrapper->GetGameInstance());
 	return 1;
 }
 

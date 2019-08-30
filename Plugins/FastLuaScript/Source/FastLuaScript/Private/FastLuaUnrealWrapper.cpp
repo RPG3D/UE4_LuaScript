@@ -12,7 +12,7 @@
 
 
 
-int InitUnrealLib(lua_State* L)
+static int InitUnrealLib(lua_State* L)
 {
 	const static luaL_Reg funcs[] =
 	{
@@ -29,7 +29,7 @@ int InitUnrealLib(lua_State* L)
 	return 1;
 }
 
-int RegisterRawAPI(lua_State* InL)
+static int RegisterRawAPI(lua_State* InL)
 {
 	lua_getglobal(InL, "_G");
 	const static luaL_Reg funcs[] =
@@ -46,7 +46,7 @@ int RegisterRawAPI(lua_State* InL)
 }
 
 
-int RequireFromUFS(lua_State* InL)
+static int RequireFromUFS(lua_State* InL)
 {
 	const char* RawFilwName = lua_tostring(InL, -1);
 	FString FileName = UTF8_TO_TCHAR(RawFilwName);
