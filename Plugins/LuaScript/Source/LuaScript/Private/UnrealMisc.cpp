@@ -591,7 +591,7 @@ int FUnrealMisc::LuaGetGameInstance(lua_State* InL)
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
 	FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(InL, -1);
 	lua_pop(InL, 1);
-	FUnrealMisc::PushObject(InL, LuaWrapper->CachedGameInstance);
+	FUnrealMisc::PushObject(InL, (UObject*)LuaWrapper->CachedGameInstance);
 	return 1;
 }
 

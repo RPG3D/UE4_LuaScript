@@ -16,9 +16,9 @@
 #include "ObjectLuaReference.h"
 
 
-int InitUnrealLib(lua_State* L);
-int RegisterRawAPI(lua_State* InL);
-int RequireFromUFS(lua_State* InL);
+static int InitUnrealLib(lua_State* L);
+static int RegisterRawAPI(lua_State* InL);
+static int RequireFromUFS(lua_State* InL);
 
 
 FLuaUnrealWrapper::FLuaUnrealWrapper()
