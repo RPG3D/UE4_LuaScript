@@ -35,10 +35,7 @@ function Main()
 	print(#NewTags)
 	
 	
-	for i = 1, 10 do
-		local test = KismetMathLibrary:MakeVector(i, i + 1, i + 2)
-	end
-	
+	local com = PlayerCtrl:GetComponentByClass(Unreal.LuaLoadClass(G_GameInstance, 'SceneComponent'))
 end
 
 
