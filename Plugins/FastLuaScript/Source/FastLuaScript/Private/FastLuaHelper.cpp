@@ -56,9 +56,13 @@ bool FastLuaHelper::IsScriptCallableFunction(const UFunction* InFunction)
 bool FastLuaHelper::IsScriptReadableProperty(const UProperty* InProperty)
 {
 	const uint64 ReadableFlags = CPF_BlueprintAssignable | CPF_BlueprintVisible | CPF_InstancedReference;
-	bool bScriptReadable = InProperty && InProperty->HasAnyPropertyFlags(ReadableFlags) && InProperty->HasAllPropertyFlags(CPF_NativeAccessSpecifierPublic) && !InProperty->HasAnyPropertyFlags(CPF_Deprecated);
+	bool bScriptReadable = InProperty && InProperty->HasAnyPropertyFlags(ReadableFlags) && InProperty->HasAllPropertyFlags(CPF_NativeAccessSpecifierPublic) && !InProperty->HasAnyPropertyFlags(CPF_EditorOnly | CPF_Deprecated);
 	if (bScriptReadable)
 	{
+		/*if (InProperty->GetName() == FString("NotifyColor"))
+		{
+			UE_LOG(LogTemp, Log, TEXT("Breakpoint!"));
+		}*/
 		TMap<FName, FString> MetaDataList = *UMetaData::GetMapForObject(InProperty);
 		if (MetaDataList.Find(FName("DeprecationMessage")) == nullptr)
 		{
