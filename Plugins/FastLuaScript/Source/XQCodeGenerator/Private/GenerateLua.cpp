@@ -533,17 +533,6 @@ int32 GenerateLua::GenerateCodeForStruct(const class UScriptStruct* InStruct) co
 	FString PkgName = Pkg->GetName();
 	FString StructName = InStruct->GetName();
 
-	/*if (InStruct->HasAnyClassFlags(EClassFlags::CLASS_RequiredAPI) == false)
-	{
-		return -1;
-	}*/
-
-	/*if (StructName == FString("PrimaryAssetType"))
-	{
-		TMap<FName, FString> MetaDataList = *UMetaData::GetMapForObject(InStruct);
-		UE_LOG(LogTemp, Log, TEXT("breakpoint!"));
-	}*/
-
 	bool bShouldExportModule = false;
 	for (int32 i = 0; i < ModulesShouldExport.Num(); ++i)
 	{
@@ -563,8 +552,6 @@ int32 GenerateLua::GenerateCodeForStruct(const class UScriptStruct* InStruct) co
 
 
 	FString RawHeaderPath = InStruct->GetMetaData(*FString("ModuleRelativePath"));
-
-	//UE_LOG(LogTemp, Log, TEXT("Exporting: %s    %s"), *StructName, *RawHeaderPath);
 
 	TMap<FString, FString> FunctionList;
 
@@ -589,14 +576,14 @@ int32 GenerateLua::GenerateCodeForStruct(const class UScriptStruct* InStruct) co
 			}
 			++ExportedFieldCount;
 
-			FunctionList.Add(FString("Get_") + PropName, FString("Lua_Get_") + PropName);
-			FunctionList.Add(FString("Set_") + PropName, FString("Lua_Set_") + PropName);
+			FunctionList.Add(FString("Get") + PropName, FString("Lua_Get") + PropName);
+			FunctionList.Add(FString("Set") + PropName, FString("Lua_Set") + PropName);
 
 
-			FString PropGetDeclareStr = FString::Printf(TEXT("\tstatic int32 Lua_Get_%s(lua_State* InL);\n"), *PropName);
+			FString PropGetDeclareStr = FString::Printf(TEXT("\tstatic int32 Lua_Get%s(lua_State* InL);\n"), *PropName);
 			HeaderStr += PropGetDeclareStr;
 
-			FString PropSetDeclareStr = FString::Printf(TEXT("\tstatic int32 Lua_Set_%s(lua_State* InL);\n\n"), *PropName);
+			FString PropSetDeclareStr = FString::Printf(TEXT("\tstatic int32 Lua_Set%s(lua_State* InL);\n\n"), *PropName);
 			HeaderStr += PropSetDeclareStr;
 		}
 
@@ -645,7 +632,7 @@ int32 GenerateLua::GenerateCodeForStruct(const class UScriptStruct* InStruct) co
 
 			FString PropName = It->GetName();
 
-			FString PropGetDefineBeginStr = FString::Printf(TEXT("int32 Lua_%s::Lua_Get_%s(lua_State* InL)\n{\n"), *StructName, *PropName);
+			FString PropGetDefineBeginStr = FString::Printf(TEXT("int32 Lua_%s::Lua_Get%s(lua_State* InL)\n{\n"), *StructName, *PropName);
 			SourceStr += PropGetDefineBeginStr;
 
 			FString GetBodyStr = FString("\t") + GenerateGetPropertyStr(*It, PropName, InStruct);
@@ -656,7 +643,7 @@ int32 GenerateLua::GenerateCodeForStruct(const class UScriptStruct* InStruct) co
 
 
 
-			FString PropSetDefineBeginStr = FString::Printf(TEXT("int32 Lua_%s::Lua_Set_%s(lua_State* InL)\n{\n"), *StructName, *PropName);
+			FString PropSetDefineBeginStr = FString::Printf(TEXT("int32 Lua_%s::Lua_Set%s(lua_State* InL)\n{\n"), *StructName, *PropName);
 			SourceStr += PropSetDefineBeginStr;
 
 			FString SetBodyStr = FString("\t") + GenerateSetPropertyStr(*It, PropName, InStruct);
