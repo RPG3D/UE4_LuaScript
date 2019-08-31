@@ -16,16 +16,12 @@ class UDelegateCallLua : public UObject
 {
 	GENERATED_BODY()
 public:
-	UDelegateCallLua(const FObjectInitializer& ObjInit);
 
-	//call this after hot update
-	bool HotfixLuaFunction();
+	UFUNCTION(BlueprintCallable)
+		int32 Unbind();
 
 	//now, now conside One lua state for the plugin
 	lua_State* LuaState = nullptr;
-
-	//cache lua function name, used for hot update
-	FString LuaFunctionName;
 
 	//Lua function index in lua global registry
 	int32 LuaFunctionID = 0;
@@ -40,10 +36,10 @@ public:
 	//the UFunction bound to this Delegate
 	UFunction* FunctionSignature = nullptr;
 
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION()
 		void TestFunction() {}
 
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION()
 		static FName GetWrapperFunctionName() { return FName(TEXT("TestFunction")); }
 
 	virtual void ProcessEvent(UFunction* InFunction, void* Parms) override;

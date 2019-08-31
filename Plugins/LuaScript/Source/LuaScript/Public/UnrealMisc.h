@@ -86,6 +86,6 @@ public:
 	static int LuaCallUnrealDelegate(lua_State* InL);
 	static int LuaDumpObject(lua_State* InL);
 	static int LuaAddObjectRef(lua_State* InL);
-	static int LuaHotfixDelegateBind(lua_State* InL);
+
 	static int PrintLog(lua_State* L);
 };

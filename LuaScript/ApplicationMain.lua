@@ -30,7 +30,7 @@ end
 function MainTable:HandleUIEvent(InParam)
 	print('OnUIEvent')
 
-	print(InParam:Get_X(), InParam:Get_Y())
+	print(InParam:GetX(), InParam:GetY())
 	
 	--G_GameInstance:Get_OnUIEvent():Unbind(MainTable.DelegateObj)
 	MainTable.DelegateObj:Unbind(MainTable.DelegateObj)

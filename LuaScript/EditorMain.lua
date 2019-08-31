@@ -13,10 +13,14 @@ GTimer = Timer:new("GTimer")
 inspect = require("inspect")
 
 
+function OnCompleted()
+	print(1111)
+end
+
 function Main()
 
 	print(("----------EditorLua Ram: %.2fMB----------"):format(collectgarbage("count") / 1024))
-
+	GTimer:SetTimer('qqq', 3, 1, OnCompleted, nil)
 end
 
 --global timer

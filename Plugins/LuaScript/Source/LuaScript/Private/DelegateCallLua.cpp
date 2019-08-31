@@ -5,11 +5,49 @@
 #include "lua.hpp"
 #include "UnrealMisc.h"
 #include "LuaStat.h"
+#include "LuaUnrealWrapper.h"
 
-UDelegateCallLua::UDelegateCallLua(const FObjectInitializer& ObjInit)
-	:Super(ObjInit)
+int32 UDelegateCallLua::Unbind()
 {
+	if (LuaState == nullptr)
+	{
+		return -1;
+	}
 
+	if (LuaFunctionID)
+	{
+		luaL_unref(LuaState, LUA_REGISTRYINDEX, LuaFunctionID);
+		LuaFunctionID = 0;
+	}
+
+	if (LuaSelfID)
+	{
+		luaL_unref(LuaState, LUA_REGISTRYINDEX, LuaSelfID);
+		LuaSelfID = 0;
+	}
+
+	lua_rawgetp(LuaState, LUA_REGISTRYINDEX, LuaState);
+	FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(LuaState, -1);
+	lua_pop(LuaState, 1);
+	LuaState = nullptr;
+
+	if (bIsMulti && DelegateInst)
+	{
+		FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)DelegateInst;
+		MultiDelegate->Remove(this, UDelegateCallLua::GetWrapperFunctionName());
+	}
+
+	if (!bIsMulti && DelegateInst)
+	{
+		FScriptDelegate* SingleDelegate = (FScriptDelegate*)DelegateInst;
+		SingleDelegate->Clear();
+	}
+
+	LuaWrapper->DelegateCallLuaList.Remove(this);
+
+	this->RemoveFromRoot();
+
+	return 0;
 }
 
 void UDelegateCallLua::ProcessEvent(UFunction* InFunction, void* Parms)
@@ -57,36 +95,4 @@ void UDelegateCallLua::ProcessEvent(UFunction* InFunction, void* Parms)
 		//get function return Value, in common
 		FUnrealMisc::FetchProperty(LuaState, ReturnParam, Parms);
 	}
-}
-
-bool UDelegateCallLua::HotfixLuaFunction()
-{
-	if (LuaState == nullptr)
-	{
-		return false;
-	}
-
-	//unref old
-	if (LuaState && LuaFunctionID)
-	{
-		luaL_unref(LuaState, LUA_REGISTRYINDEX, LuaFunctionID);
-	}
-
-	//ref function
-	lua_rawgeti(LuaState, LUA_REGISTRYINDEX, LuaSelfID);
-	lua_getfield(LuaState, -1, TCHAR_TO_UTF8(*LuaFunctionName));
-	if (lua_isfunction(LuaState, -1))
-	{
-		LuaFunctionID = luaL_ref(LuaState, LUA_REGISTRYINDEX);
-	}
-	else
-	{
-		lua_pop(LuaState, 1);
-		return false;
-	}
-
-	//remove self
-	lua_pop(LuaState, 1);
-
-	return true;
 }

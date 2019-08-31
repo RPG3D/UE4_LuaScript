@@ -570,7 +570,7 @@ int FUnrealMisc::LuaGetGameInstance(lua_State* InL)
 }
 
 
-//Lua usage: LoadMapEndedEvent:Bind("LuaBindLoadMapEnded", LuaObj, LuaFunctionName)
+//Lua usage: LoadMapEndedEvent:Bind(LuaFunction, LuaObj, InWrapperObjectName[option])
 int FUnrealMisc::LuaBindDelegate(lua_State* InL)
 {
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
@@ -578,70 +578,26 @@ int FUnrealMisc::LuaBindDelegate(lua_State* InL)
 	lua_pop(InL, 1);
 
 	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, 1);
-	const FString DelegateUniqueName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
-	int LuaObjType = lua_type(InL, 3);
-	FString LuaFunctionName = lua_tostring(InL, 4);
 
-	if (DelegateUniqueName.IsEmpty() || Wrapper == nullptr || Wrapper->WrapperType != ELuaUnrealWrapperType::Delegate || (LuaObjType != LUA_TTABLE && LuaObjType != LUA_TUSERDATA) || LuaFunctionName.IsEmpty())
+	if (Wrapper == nullptr || Wrapper->WrapperType != ELuaUnrealWrapperType::Delegate || !lua_isfunction(InL, 2))
 	{
 		luaL_traceback(InL, InL, "Error in BindDelegate", 1);
 		FUnrealMisc::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(InL, -1))), 1, LuaWrapper);
-		lua_pushinteger(InL, -1);
+		lua_pushnil(InL);
 		return 1;
 	}
 
-
-	//check exist?
-	if (Wrapper->bIsMulti)
-	{
-		FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)Wrapper->DelegateInst;
-		if (MultiDelegate)
-		{
-			TArray<UObject*> ObjList = MultiDelegate->GetAllObjects();
-			for (int32 i = 0; i < ObjList.Num(); ++i)
-			{
-				if (ObjList[i]->GetName().Equals(DelegateUniqueName, ESearchCase::IgnoreCase))
-				{
-					//-1 means exist
-					lua_pushinteger(InL, -1);
-					return 1;
-				}
-			}
-		}
-	}
-	else
-	{
-		FScriptDelegate* SingleDelegate = (FScriptDelegate*)Wrapper->DelegateInst;
-		if (SingleDelegate)
-		{
-			if (SingleDelegate->GetUObject() && SingleDelegate->GetUObject()->GetName().Equals(DelegateUniqueName, ESearchCase::IgnoreCase))
-			{
-				//-1 means exist
-				lua_pushinteger(InL, -1);
-				return 1;
-			}
-		}
-	}
-
-	UDelegateCallLua* DelegateObject = NewObject<UDelegateCallLua>(GetTransientPackage(), FName(*DelegateUniqueName));
-	DelegateObject->LuaFunctionName = LuaFunctionName;
-
-	//ref self
-	lua_pushvalue(InL, 3);
-	DelegateObject->LuaSelfID = luaL_ref(InL, LUA_REGISTRYINDEX);
-
+	//FString WrapperObjectName = ;
+	UDelegateCallLua* DelegateObject = NewObject<UDelegateCallLua>(GetTransientPackage(), FName(lua_tostring(InL, 4)));
 	//ref function
-	lua_pushvalue(InL, 3);
-	lua_getfield(InL, -1, TCHAR_TO_UTF8(*LuaFunctionName));
-	if (lua_isfunction(InL, -1))
+	lua_pushvalue(InL, 2);
+	DelegateObject->LuaFunctionID = luaL_ref(InL, LUA_REGISTRYINDEX);
+	//ref self
+	if (lua_istable(InL, 3))
 	{
-		DelegateObject->LuaFunctionID = luaL_ref(InL, LUA_REGISTRYINDEX);
+		lua_pushvalue(InL, 3);
+		DelegateObject->LuaSelfID = luaL_ref(InL, LUA_REGISTRYINDEX);
 	}
-	else
-	{
-		lua_pop(InL, 1);
-	}
-
 
 	DelegateObject->FunctionSignature = Wrapper->FunctionSignature;
 	DelegateObject->bIsMulti = Wrapper->bIsMulti;
@@ -672,110 +628,63 @@ int FUnrealMisc::LuaBindDelegate(lua_State* InL)
 	}
 
 	DelegateObject->LuaState = InL;
-	//retuen True
-	lua_pushboolean(InL, true);
+	//return wrapper object
+	FUnrealMisc::PushObject(InL, DelegateObject);
 	return 1;
 }
 
-//Lua usage: LoadMapEndedEvent:Remove("LuaBindLoadMapEnded")
-//Lua usage2: LoadMapEndedEvent:Remove(),this will remove all lua function
+//Lua usage: LoadMapEndedEvent:Unbind(WrapperObject[option, remove single])
 int FUnrealMisc::LuaUnbindDelegate(lua_State* InL)
 {
-	int32 LuaSelfID = 0;
-	int32 LuaFuncID = 0;
 	bool bIsMulti = false;
 	UDelegateCallLua* FuncObj = nullptr;
-	bool bRemoveAll = true;
 	const void* DelegateInst = nullptr;
 
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
 	FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(InL, -1);
 	lua_pop(InL, 1);
 
-
-	if (lua_isuserdata(InL, 1))
+	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, 1);
+	if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Delegate)
 	{
-		FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, 1);
-		if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Delegate)
-		{
-			DelegateInst = Wrapper->DelegateInst;
-			bIsMulti = Wrapper->bIsMulti;
-		}
+		DelegateInst = Wrapper->DelegateInst;
+		bIsMulti = Wrapper->bIsMulti;
 	}
-	else
+
+	if (DelegateInst == nullptr)
 	{
 		lua_pushnil(InL);
 		return 1;
 	}
-	FString FuncObjName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
 
-	if (FuncObjName.Len() || bIsMulti == false)
+	FuncObj = Cast<UDelegateCallLua>(FetchObject(InL, 2));
+	if (FuncObj)
 	{
-		bRemoveAll = false;
-
-		for (UDelegateCallLua* It : LuaWrapper->DelegateCallLuaList)
-		{
-			if ((bIsMulti == false && DelegateInst == It->DelegateInst) || It->GetName().Equals(FuncObjName, ESearchCase::IgnoreCase))
-			{
-				FuncObj = It;
-				bIsMulti = FuncObj->bIsMulti;
-				LuaFuncID = FuncObj->LuaFunctionID;
-				DelegateInst = FuncObj->DelegateInst;
-				LuaSelfID = FuncObj->LuaSelfID;
-				break;
-			}
-		}
+		FuncObj->Unbind();
+		lua_pushboolean(InL, true);
+		return 1;
 	}
-
-	if (bIsMulti && DelegateInst)
+	else
 	{
-		if (FMulticastScriptDelegate * MultiDelegate = (FMulticastScriptDelegate*)DelegateInst)
+		if (bIsMulti)
 		{
-			//remove one
-			if (!bRemoveAll && FuncObj)
+			FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)DelegateInst;
+			TArray<UObject*> ObjList = MultiDelegate->GetAllObjects();
+			for (auto It : ObjList)
 			{
-				//remove bind
-				MultiDelegate->Remove(FuncObj, UDelegateCallLua::GetWrapperFunctionName());
-				//after Unbind, remove lua function from registry
-				// bind one lua function to 2 diff UE4's delegate will get 2 diff lua function Index in registry
-				luaL_unref(InL, LUA_REGISTRYINDEX, LuaFuncID);
-				luaL_unref(InL, LUA_REGISTRYINDEX, FuncObj->LuaSelfID);
-				FuncObj->RemoveFromRoot();
-				LuaWrapper->DelegateCallLuaList.Remove(FuncObj);
-			}
-			//remove all
-			else if (FuncObj)
-			{
-				TArray<UObject*> ObjList = MultiDelegate->GetAllObjects();
-				for (int32 i = ObjList.Num() - 1; i >= 0; --i)
+				if (UDelegateCallLua* LuaObj = Cast<UDelegateCallLua>(It))
 				{
-					UDelegateCallLua* LuaDelegate = Cast<UDelegateCallLua>(ObjList[i]);
-					if (LuaDelegate)
-					{
-						//remove bind
-						MultiDelegate->Remove(LuaDelegate, UDelegateCallLua::GetWrapperFunctionName());
-						luaL_unref(InL, LUA_REGISTRYINDEX, LuaDelegate->LuaFunctionID);
-						luaL_unref(InL, LUA_REGISTRYINDEX, LuaDelegate->LuaSelfID);
-						LuaDelegate->RemoveFromRoot();
-						LuaWrapper->DelegateCallLuaList.Remove(LuaDelegate);
-					}
+					LuaObj->Unbind();
 				}
-
 			}
-
 		}
-	}
-	else if (DelegateInst && FuncObj)
-	{
-		if (FScriptDelegate * SingleDelegate = (FScriptDelegate*)DelegateInst)
+		else
 		{
-			SingleDelegate->Clear();
-			//after Unbind, remove lua function from registry
-			// bind one lua function to 2 diff UE4's delegate will get 2 diff lua function Index in registry
-			luaL_unref(InL, LUA_REGISTRYINDEX, LuaFuncID);
-			luaL_unref(InL, LUA_REGISTRYINDEX, LuaSelfID);
-			FuncObj->RemoveFromRoot();
-			LuaWrapper->DelegateCallLuaList.Remove(FuncObj);
+			FScriptDelegate* SingleDelegate = (FScriptDelegate*)DelegateInst;
+			if (UDelegateCallLua* LuaObj = Cast<UDelegateCallLua>(SingleDelegate->GetUObject()))
+			{
+				LuaObj->Unbind();
+			}
 		}
 	}
 
@@ -847,7 +756,7 @@ int FUnrealMisc::LuaLoadClass(lua_State* InL)
 int FUnrealMisc::LuaNewObject(lua_State* InL)
 {
 	int ParamNum = lua_gettop(InL);
-	if (ParamNum < 3)
+	if (ParamNum < 2)
 	{
 		//error
 		return 0;
@@ -1016,25 +925,6 @@ int FUnrealMisc::LuaAddObjectRef(lua_State* InL)
 	return 1;
 
 }
-
-int FUnrealMisc::LuaHotfixDelegateBind(lua_State* InL)
-{
-	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-	FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(InL, -1);
-	lua_pop(InL, 1);
-
-	if (LuaWrapper && LuaWrapper->DelegateCallLuaList.Num())
-	{
-		for (UDelegateCallLua* It : LuaWrapper->DelegateCallLuaList)
-		{
-			It->HotfixLuaFunction();
-		}
-	}
-
-	lua_pushboolean(InL, true);
-	return 1;
-}
-
 
 int FUnrealMisc::PrintLog(lua_State* L)
 {

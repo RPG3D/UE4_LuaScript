@@ -466,7 +466,6 @@ int InitUnrealLib(lua_State* L)
 		{"LuaNewObject", FUnrealMisc::LuaNewObject},
 		{"LuaDumpObject", FUnrealMisc::LuaDumpObject},
 		{"LuaAddObjectRef", FUnrealMisc::LuaAddObjectRef},
-		{"LuaHotfixDelegateBind", FUnrealMisc::LuaHotfixDelegateBind},
 		{nullptr, nullptr}
 	};
 
