@@ -12,19 +12,16 @@ struct lua_State;
  * a UObject wrapper for UE4 and Lua function
  */
 UCLASS()
-class UFastLuaDelegate : public UObject
+class FASTLUASCRIPT_API UFastLuaDelegate : public UObject
 {
 	GENERATED_BODY()
 public:
 
-	//call this after hot update
-	bool HotfixLuaFunction();
+	UFUNCTION(BlueprintCallable)
+		int32 Unbind();
 
 	//now, now conside One lua state for the plugin
 	lua_State* LuaState = nullptr;
-
-	//cache lua function name, used for hot update
-	FString LuaFunctionName;
 
 	//Lua function index in lua global registry
 	int32 LuaFunctionID = 0;

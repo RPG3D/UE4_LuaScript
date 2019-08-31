@@ -198,10 +198,249 @@ bool FastLuaHelper::IsPointerType(const FString& InTypeName)
 }
 
 
+void FastLuaHelper::PushProperty(lua_State* InL, UProperty* InProp, void* InBuff, bool bRef /*= true*/)
+{
+	if (InProp == nullptr || InProp->GetClass() == nullptr)
+	{
+		LuaLog(FString("Property is nil"));
+		return;
+	}
+	if (const UIntProperty * IntProp = Cast<UIntProperty>(InProp))
+	{
+		lua_pushinteger(InL, IntProp->GetPropertyValue_InContainer(InBuff));
+	}
+	else if (const UFloatProperty * FloatProp = Cast<UFloatProperty>(InProp))
+	{
+		lua_pushnumber(InL, FloatProp->GetPropertyValue_InContainer(InBuff));
+	}
+	else if (const UEnumProperty * EnumProp = Cast<UEnumProperty>(InProp))
+	{
+		const UNumericProperty* NumProp = EnumProp->GetUnderlyingProperty();
+		lua_pushinteger(InL, NumProp ? NumProp->GetSignedIntPropertyValue(InBuff) : 0);
+	}
+	else if (const UBoolProperty * BoolProp = Cast<UBoolProperty>(InProp))
+	{
+		lua_pushboolean(InL, BoolProp->GetPropertyValue_InContainer(InBuff));
+	}
+	else if (const UNameProperty * NameProp = Cast<UNameProperty>(InProp))
+	{
+		FName name = NameProp->GetPropertyValue_InContainer(InBuff);
+		lua_pushstring(InL, TCHAR_TO_UTF8(*name.ToString()));
+	}
+	else if (const UStrProperty * StrProp = Cast<UStrProperty>(InProp))
+	{
+		const FString& str = StrProp->GetPropertyValue_InContainer(InBuff);
+		lua_pushstring(InL, TCHAR_TO_UTF8(*str));
+	}
+	else if (const UTextProperty * TextProp = Cast<UTextProperty>(InProp))
+	{
+		const FText& text = TextProp->GetPropertyValue_InContainer(InBuff);
+		lua_pushstring(InL, TCHAR_TO_UTF8(*text.ToString()));
+	}
+	else if (const UClassProperty * ClassProp = Cast<UClassProperty>(InProp))
+	{
+		PushObject(InL, ClassProp->GetPropertyValue_InContainer(InBuff));
+	}
+	else if (const UStructProperty * StructProp = Cast<UStructProperty>(InProp))
+	{
+		if (const UScriptStruct * ScriptStruct = Cast<UScriptStruct>(StructProp->Struct))
+		{
+			PushStruct(InL, ScriptStruct, StructProp->ContainerPtrToValuePtr<void>(InBuff));
+		}
+	}
+	else if (const UObjectProperty * ObjectProp = Cast<UObjectProperty>(InProp))
+	{
+		PushObject(InL, ObjectProp->GetObjectPropertyValue(ObjectProp->GetPropertyValuePtr_InContainer(InBuff)));
+	}
+	else if (UDelegateProperty * DelegateProp = Cast<UDelegateProperty>(InProp))
+	{
+		PushDelegate(InL, DelegateProp, InBuff, false);
+	}
+	else if (UMulticastDelegateProperty * MultiDelegateProp = Cast<UMulticastDelegateProperty>(InProp))
+	{
+		PushDelegate(InL, DelegateProp, InBuff, true);
+	}
+	else if (const UArrayProperty * ArrayProp = Cast<UArrayProperty>(InProp))
+	{
+		FScriptArrayHelper ArrayHelper(ArrayProp, InBuff);
+		lua_newtable(InL);
+		for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+		{
+			PushProperty(InL, ArrayProp->Inner, ArrayHelper.GetRawPtr(i), true);
+			lua_rawseti(InL, -2, i);
+		}
+	}
+	else if (const USetProperty * SetProp = Cast<USetProperty>(InProp))
+	{
+		FScriptSetHelper SetHelper(SetProp, InBuff);
+		lua_newtable(InL);
+		for (int32 i = 0; i < SetHelper.Num(); ++i)
+		{
+			PushProperty(InL, SetHelper.GetElementProperty(), SetHelper.GetElementPtr(i), true);
+			lua_rawseti(InL, -2, i);
+		}
+	}
+	else if (const UMapProperty * MapProp = Cast<UMapProperty>(InProp))
+	{
+		FScriptMapHelper MapHelper(MapProp, InBuff);
+		lua_newtable(InL);
+		for (int32 i = 0; i < MapHelper.Num(); ++i)
+		{
+			uint8* PairPtr = MapHelper.GetPairPtr(i);
+			PushProperty(InL, MapProp->KeyProp, PairPtr, true);
+			PushProperty(InL, MapProp->ValueProp, PairPtr, true);
+			lua_rawset(InL, -3);
+		}
+	}
+}
+
+void FastLuaHelper::FetchProperty(lua_State* InL, const UProperty* InProp, void* InBuff, int32 InStackIndex /*= -1*/, FName ErrorName /*= TEXT("")*/)
+{
+	//no enough params
+	if (lua_gettop(InL) < lua_absindex(InL, InStackIndex))
+	{
+		return;
+	}
+
+	FString PropName = InProp->GetName();
+
+	if (const UIntProperty * IntProp = Cast<UIntProperty>(InProp))
+	{
+		IntProp->SetPropertyValue_InContainer(InBuff, lua_tointeger(InL, InStackIndex));
+	}
+	else if (const UInt64Property * Int64Prop = Cast<UInt64Property>(InProp))
+	{
+		Int64Prop->SetPropertyValue_InContainer(InBuff, lua_tointeger(InL, InStackIndex));
+	}
+	else if (const UFloatProperty * FloatProp = Cast<UFloatProperty>(InProp))
+	{
+		FloatProp->SetPropertyValue_InContainer(InBuff, lua_tonumber(InL, InStackIndex));
+	}
+	else if (const UBoolProperty * BoolProp = Cast<UBoolProperty>(InProp))
+	{
+		BoolProp->SetPropertyValue_InContainer(InBuff, (bool)lua_toboolean(InL, InStackIndex));
+	}
+	else if (const UNameProperty * NameProp = Cast<UNameProperty>(InProp))
+	{
+		NameProp->SetPropertyValue_InContainer(InBuff, UTF8_TO_TCHAR(lua_tostring(InL, InStackIndex)));
+	}
+	else if (const UStrProperty * StrProp = Cast<UStrProperty>(InProp))
+	{
+		StrProp->SetPropertyValue_InContainer(InBuff, UTF8_TO_TCHAR(lua_tostring(InL, InStackIndex)));
+	}
+	else if (const UTextProperty * TextProp = Cast<UTextProperty>(InProp))
+	{
+		TextProp->SetPropertyValue_InContainer(InBuff, FText::FromString(UTF8_TO_TCHAR(lua_tostring(InL, InStackIndex))));
+	}
+	else if (const UByteProperty * ByteProp = Cast<UByteProperty>(InProp))
+	{
+		ByteProp->SetPropertyValue_InContainer(InBuff, lua_tointeger(InL, InStackIndex));
+	}
+	else if (const UEnumProperty * EnumProp = Cast<UEnumProperty>(InProp))
+	{
+		UNumericProperty* UnderlyingProp = EnumProp->GetUnderlyingProperty();
+		UnderlyingProp->SetIntPropertyValue(EnumProp->ContainerPtrToValuePtr<void>(InBuff), lua_tointeger(InL, InStackIndex));
+	}
+	else if (const UClassProperty * ClassProp = Cast<UClassProperty>(InProp))
+	{
+		//TODO check property
+		ClassProp->SetPropertyValue_InContainer(InBuff, FetchObject(InL, InStackIndex));
+	}
+	else if (const UStructProperty * StructProp = Cast<UStructProperty>(InProp))
+	{
+		void* Data = FetchStruct(InL, InStackIndex);
+		if (Data)
+		{
+			StructProp->Struct->CopyScriptStruct(InBuff, Data);
+		}
+	}
+	else if (const UObjectProperty * ObjectProp = Cast<UObjectProperty>(InProp))
+	{
+		//TODO, check property
+		ObjectProp->SetObjectPropertyValue_InContainer(InBuff, FetchObject(InL, InStackIndex));
+	}
+	else if (const UDelegateProperty * DelegateProp = Cast<UDelegateProperty>(InProp))
+	{
+		FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, InStackIndex);
+		if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Delegate && Wrapper->DelegateInst && Wrapper->bIsMulti == false)
+		{
+			DelegateProp->SetPropertyValue_InContainer(InBuff, *(FScriptDelegate*)Wrapper->DelegateInst);
+		}
+	}
+	else if (const UMulticastDelegateProperty * MultiDelegateProp = Cast<UMulticastDelegateProperty>(InProp))
+	{
+		FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, InStackIndex);
+		if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Delegate && Wrapper->DelegateInst && Wrapper->bIsMulti)
+		{
+			MultiDelegateProp->SetMulticastDelegate(InBuff, *(FMulticastScriptDelegate*)Wrapper->DelegateInst);
+		}
+	}
+	else if (const UArrayProperty * ArrayProp = Cast<UArrayProperty>(InProp))
+	{
+		FScriptArrayHelper ArrayHelper(ArrayProp, InBuff);
+		int32 i = 0;
+		lua_pushnil(InL);
+		while (lua_next(InL, -2))
+		{
+			if (ArrayHelper.Num() < i + 1)
+			{
+				ArrayHelper.AddValue();
+			}
+
+			FetchProperty(InL, ArrayProp->Inner, ArrayHelper.GetRawPtr(i), -1);
+			lua_pop(InL, 1);
+			++i;
+		}
+	}
+
+	else if (const USetProperty * SetProp = Cast<USetProperty>(InProp))
+	{
+		FScriptSetHelper SetHelper(SetProp, InBuff);
+		int32 i = 0;
+
+		lua_pushnil(InL);
+		while (lua_next(InL, -2))
+		{
+			if (SetHelper.Num() < i + 1)
+			{
+				SetHelper.AddDefaultValue_Invalid_NeedsRehash();
+			}
+
+			FetchProperty(InL, SetHelper.ElementProp, SetHelper.GetElementPtr(i), -1);
+			++i;
+			lua_pop(InL, 1);
+		}
+
+		SetHelper.Rehash();
+	}
+	else if (const UMapProperty * MapProp = Cast<UMapProperty>(InProp))
+	{
+		FScriptMapHelper MapHelper(MapProp, InBuff);
+		int32 i = 0;
+
+		lua_pushnil(InL);
+		while (lua_next(InL, -2))
+		{
+			if (MapHelper.Num() < i + 1)
+			{
+				MapHelper.AddDefaultValue_Invalid_NeedsRehash();
+			}
+
+			FetchProperty(InL, MapProp->KeyProp, MapHelper.GetPairPtr(i), -2);
+			FetchProperty(InL, MapProp->ValueProp, MapHelper.GetPairPtr(i), -1);
+			++i;
+			lua_pop(InL, 1);
+		}
+
+		MapHelper.Rehash();
+	}
+
+	return;
+
+}
+
 UObject* FastLuaHelper::FetchObject(lua_State* InL, int32 InIndex)
 {
-	InIndex = lua_absindex(InL, InIndex);
-
 	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, InIndex);
 	if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Object)
 	{
@@ -224,17 +463,22 @@ void FastLuaHelper::PushObject(lua_State* InL, UObject* InObj)
 		Wrapper->WrapperType = ELuaUnrealWrapperType::Object;
 		Wrapper->ObjInst = InObj;
 
-		const UClass* Class = InObj->GetClass();
+		UClass* Class = InObj->GetClass();
 
 		//SCOPE_CYCLE_COUNTER(STAT_FindClassMetatable);
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, Class);
-		if (lua_istable(InL, -1))
+		while (Class)
 		{
-			lua_setmetatable(InL, -2);
-		}
-		else
-		{
-			lua_pop(InL, 1);
+			lua_rawgetp(InL, LUA_REGISTRYINDEX, Class);
+			if (lua_istable(InL, -1))
+			{
+				lua_setmetatable(InL, -2);
+				break;
+			}
+			else
+			{
+				lua_pop(InL, 1);
+			}
+			Class = Class->GetSuperClass();
 		}
 	}
 }
@@ -271,45 +515,19 @@ void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, co
 	}
 }
 
-void FastLuaHelper::PushDelegate(lua_State* InL, class UObject* InObject, const FString& InDelegateName, bool InMulti)
+void FastLuaHelper::PushDelegate(lua_State* InL, void* InDelegateProperty, void* InBuff, bool InMulti)
 {
-	UProperty* InDelegateProperty = InObject->GetClass()->FindPropertyByName(FName(*InDelegateName));
-	bool bValid = false;
-	if (InMulti == false)
-	{
-		FScriptDelegate* Delegate = ((UDelegateProperty*)InDelegateProperty)->GetPropertyValuePtr_InContainer(InObject);
-		if (Delegate)
-		{
-			FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
-			Wrapper->WrapperType = ELuaUnrealWrapperType::Delegate;
-			Wrapper->bIsMulti = false;
-			Wrapper->DelegateInst = Delegate;
-			Wrapper->FunctionSignature = ((UDelegateProperty*)InDelegateProperty)->SignatureFunction;
-			bValid = true;
-		}
-	}
-	else
-	{
-		FMulticastScriptDelegate* Delegate = ((UMulticastDelegateProperty*)InDelegateProperty)->ContainerPtrToValuePtr<FMulticastScriptDelegate>(InObject);
-		if (Delegate)
-		{
-			FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
-			Wrapper->WrapperType = ELuaUnrealWrapperType::Delegate;
-			Wrapper->bIsMulti = true;
-			Wrapper->DelegateInst = Delegate;
-			Wrapper->FunctionSignature = ((UMulticastDelegateProperty*)InDelegateProperty)->SignatureFunction;
-			bValid = true;
-		}
-	}
-
-	if (bValid)
-	{
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-		FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
-		lua_pop(InL, 1);
-		lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->GetDelegateMetatableIndex());
-		lua_setmetatable(InL, -2);
-	}
+	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
+	Wrapper->WrapperType = ELuaUnrealWrapperType::Delegate;
+	Wrapper->bIsMulti = InMulti;
+	Wrapper->DelegateInst = InMulti ? (void*)((UMulticastDelegateProperty*)InDelegateProperty)->ContainerPtrToValuePtr<FMulticastScriptDelegate>(InBuff) : (void*)((UDelegateProperty*)InDelegateProperty)->GetPropertyValuePtr_InContainer(InBuff);
+	Wrapper->FunctionSignature = InMulti ? ((UMulticastDelegateProperty*)InDelegateProperty)->SignatureFunction : ((UDelegateProperty*)InDelegateProperty)->SignatureFunction;
+	
+	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
+	lua_pop(InL, 1);
+	lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->GetDelegateMetatableIndex());
+	lua_setmetatable(InL, -2);
 }
 
 int32 FastLuaHelper::CallFunction(lua_State* L)
@@ -734,6 +952,7 @@ int FastLuaHelper::PrintLog(lua_State* L)
 	return 0;
 }
 
+//Lua usage: LoadMapEndedEvent:Bind(LuaFunction, LuaObj, InWrapperObjectName[option])
 int FastLuaHelper::LuaBindDelegate(lua_State* InL)
 {
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
@@ -741,70 +960,26 @@ int FastLuaHelper::LuaBindDelegate(lua_State* InL)
 	lua_pop(InL, 1);
 
 	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, 1);
-	const FString DelegateUniqueName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
-	int LuaObjType = lua_type(InL, 3);
-	FString LuaFunctionName = lua_tostring(InL, 4);
 
-	if (DelegateUniqueName.IsEmpty() || Wrapper == nullptr || Wrapper->WrapperType != ELuaUnrealWrapperType::Delegate || (LuaObjType != LUA_TTABLE && LuaObjType != LUA_TUSERDATA) || LuaFunctionName.IsEmpty())
+	if (Wrapper == nullptr || Wrapper->WrapperType != ELuaUnrealWrapperType::Delegate || !lua_isfunction(InL, 2))
 	{
 		luaL_traceback(InL, InL, "Error in BindDelegate", 1);
 		FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(InL, -1))), 1, LuaWrapper);
-		lua_pushinteger(InL, -1);
+		lua_pushnil(InL);
 		return 1;
 	}
 
-
-	//check exist?
-	if (Wrapper->bIsMulti)
-	{
-		FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)Wrapper->DelegateInst;
-		if (MultiDelegate)
-		{
-			TArray<UObject*> ObjList = MultiDelegate->GetAllObjects();
-			for (int32 i = 0; i < ObjList.Num(); ++i)
-			{
-				if (ObjList[i]->GetName().Equals(DelegateUniqueName, ESearchCase::IgnoreCase))
-				{
-					//-1 means exist
-					lua_pushinteger(InL, -1);
-					return 1;
-				}
-			}
-		}
-	}
-	else
-	{
-		FScriptDelegate* SingleDelegate = (FScriptDelegate*)Wrapper->DelegateInst;
-		if (SingleDelegate)
-		{
-			if (SingleDelegate->GetUObject() && SingleDelegate->GetUObject()->GetName().Equals(DelegateUniqueName, ESearchCase::IgnoreCase))
-			{
-				//-1 means exist
-				lua_pushinteger(InL, -1);
-				return 1;
-			}
-		}
-	}
-
-	UFastLuaDelegate* DelegateObject = NewObject<UFastLuaDelegate>(GetTransientPackage(), FName(*DelegateUniqueName));
-	DelegateObject->LuaFunctionName = LuaFunctionName;
-
-	//ref self
-	lua_pushvalue(InL, 3);
-	DelegateObject->LuaSelfID = luaL_ref(InL, LUA_REGISTRYINDEX);
-
+	//FString WrapperObjectName = ;
+	UFastLuaDelegate* DelegateObject = NewObject<UFastLuaDelegate>(GetTransientPackage(), FName(lua_tostring(InL, 4)));
 	//ref function
-	lua_pushvalue(InL, 3);
-	lua_getfield(InL, -1, TCHAR_TO_UTF8(*LuaFunctionName));
-	if (lua_isfunction(InL, -1))
+	lua_pushvalue(InL, 2);
+	DelegateObject->LuaFunctionID = luaL_ref(InL, LUA_REGISTRYINDEX);
+	//ref self
+	if (lua_istable(InL, 3))
 	{
-		DelegateObject->LuaFunctionID = luaL_ref(InL, LUA_REGISTRYINDEX);
+		lua_pushvalue(InL, 3);
+		DelegateObject->LuaSelfID = luaL_ref(InL, LUA_REGISTRYINDEX);
 	}
-	else
-	{
-		lua_pop(InL, 1);
-	}
-
 
 	DelegateObject->FunctionSignature = Wrapper->FunctionSignature;
 	DelegateObject->bIsMulti = Wrapper->bIsMulti;
@@ -835,13 +1010,67 @@ int FastLuaHelper::LuaBindDelegate(lua_State* InL)
 	}
 
 	DelegateObject->LuaState = InL;
-	//retuen True
-	lua_pushboolean(InL, true);
+	//return wrapper object
+	FastLuaHelper::PushObject(InL, DelegateObject);
 	return 1;
 }
 
+//Lua usage: LoadMapEndedEvent:Bind(WrapperObject[option, remove single])
 int FastLuaHelper::LuaUnbindDelegate(lua_State* InL)
 {
+	bool bIsMulti = false;
+	UFastLuaDelegate* FuncObj = nullptr;
+	const void* DelegateInst = nullptr;
+
+	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
+	lua_pop(InL, 1);
+
+	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, 1);
+	if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Delegate)
+	{
+		DelegateInst = Wrapper->DelegateInst;
+		bIsMulti = Wrapper->bIsMulti;
+	}
+
+	if (DelegateInst == nullptr)
+	{
+		lua_pushnil(InL);
+		return 1;
+	}
+
+	FuncObj = Cast<UFastLuaDelegate>(FetchObject(InL, 2));
+	if (FuncObj)
+	{
+		FuncObj->Unbind();
+		lua_pushboolean(InL, true);
+		return 1;
+	}
+	else
+	{
+		if (bIsMulti)
+		{
+			FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)DelegateInst;
+			TArray<UObject*> ObjList = MultiDelegate->GetAllObjects();
+			for (auto It : ObjList)
+			{
+				if (UFastLuaDelegate * LuaObj = Cast<UFastLuaDelegate>(It))
+				{
+					LuaObj->Unbind();
+				}
+			}
+		}
+		else
+		{
+			FScriptDelegate* SingleDelegate = (FScriptDelegate*)DelegateInst;
+			if (UFastLuaDelegate * LuaObj = Cast<UFastLuaDelegate>(SingleDelegate->GetUObject()))
+			{
+				LuaObj->Unbind();
+			}
+		}
+	}
+
+	lua_pushboolean(InL, true);
 	return 1;
 }
 

@@ -81,7 +81,29 @@ FString GenerateLua::GenerateFunctionBodyStr(const class UFunction* InFunction, 
 		BodyStr += PushReturnStr;
 	}
 
-	BodyStr += FString::Printf(TEXT("\n\treturn %d;"), ReturnProp != nullptr);
+	//return ref param
+	int32 OutRefNum = 0;
+	int32 OutRefIndex = 2;
+	for (TFieldIterator<UProperty> It(InFunction); It; ++It)
+	{
+		UProperty* Prop = *It;
+		FString PropName = Prop->GetName();
+		if (Prop->HasAnyPropertyFlags(CPF_ReturnParm))
+		{
+			continue;
+		}
+
+		if (Prop->HasAnyPropertyFlags(CPF_OutParm) && !Prop->HasAnyPropertyFlags(CPF_ConstParm | CPF_ReturnParm))
+		{
+			FString TmpParamName = FString::Printf(TEXT("Param_%d_%s"), OutRefIndex, *PropName);
+			BodyStr += FString("\n\t") + GeneratePushPropertyStr(Prop, TmpParamName);
+
+			++OutRefNum;
+		}
+		++OutRefIndex;
+	}
+
+	BodyStr += FString::Printf(TEXT("\n\treturn %d;"), !!ReturnProp + OutRefNum);
 
 	return BodyStr;
 }
@@ -697,7 +719,25 @@ FString GenerateLua::GeneratePushPropertyStr(const UProperty* InProp, const FStr
 	else if (const UStructProperty* StructProp = Cast<UStructProperty>(InProp))
 	{
 		FString StructName = StructProp->Struct->GetName();
-		BodyStr = FString::Printf(TEXT("static UScriptStruct* _StructMetaClass = FindObject<UScriptStruct>(ANY_PACKAGE, *FString(\"%s\")); \n\tFastLuaHelper::PushStruct(InL, _StructMetaClass, &%s);"), *StructName, *InParamName);
+		FString MetatableStr = InParamName;
+		int32 SplitIndex = INDEX_NONE;
+		InParamName.FindChar('.', SplitIndex);
+		if (SplitIndex < 0)
+		{
+			InParamName.FindChar('>', SplitIndex);
+		}
+		if (SplitIndex > INDEX_NONE)
+		{
+			MetatableStr = InParamName.Mid(SplitIndex + 1);
+		}
+		
+		MetatableStr.FindChar('[', SplitIndex);
+		if (SplitIndex > INDEX_NONE)
+		{
+			MetatableStr = MetatableStr.Left(SplitIndex);
+		}
+
+		BodyStr = FString::Printf(TEXT("static UScriptStruct* %s_MetatableIndex = FindObject<UScriptStruct>(ANY_PACKAGE, *FString(\"%s\")); \n\tFastLuaHelper::PushStruct(InL, %s_MetatableIndex, &%s);"), *MetatableStr, *StructName, *MetatableStr, *InParamName);
 	}
 	else if (const UClassProperty* ClassProp = Cast<UClassProperty>(InProp))
 	{
@@ -717,7 +757,7 @@ FString GenerateLua::GeneratePushPropertyStr(const UProperty* InProp, const FStr
 		InParamName.ParseIntoArray(ParamNames, *FString("->"));
 		if (ParamNames.Num() == 2)
 		{
-			BodyStr = FString::Printf(TEXT("FastLuaHelper::PushDelegate(InL, %s, \"%s\", false);"), *ParamNames[0], *ParamNames[1]);
+			BodyStr = FString::Printf(TEXT("FastLuaHelper::PushDelegate(InL, %s->GetClass()->FindPropertyByName(\"%s\"), %s, false);"), *ParamNames[0], *ParamNames[1], *ParamNames[0]);
 		}
 	}
 	else if (const UMulticastDelegateProperty* MultiDelegateProp = Cast<UMulticastDelegateProperty>(InProp))
@@ -726,7 +766,7 @@ FString GenerateLua::GeneratePushPropertyStr(const UProperty* InProp, const FStr
 		InParamName.ParseIntoArray(ParamNames, *FString("->"));
 		if (ParamNames.Num() == 2)
 		{
-			BodyStr = FString::Printf(TEXT("FastLuaHelper::PushDelegate(InL, %s, \"%s\", true);"), *ParamNames[0], *ParamNames[1]);
+			BodyStr = FString::Printf(TEXT("FastLuaHelper::PushDelegate(InL, %s->GetClass()->FindPropertyByName(\"%s\"), %s, true);"), *ParamNames[0], *ParamNames[1], *ParamNames[0]);
 		}
 	}
 	else if (const UArrayProperty* ArrayProp = Cast<UArrayProperty>(InProp))
@@ -756,7 +796,7 @@ FString GenerateLua::GenerateFetchPropertyStr(const UProperty* InProp, const FSt
 		{
 			FString MetaClassName = Cls->GetName();
 			FString MetaClassPrefix = Cls->GetPrefixCPP();
-			BodyStr = FString::Printf(TEXT("FLuaObjectWrapper* %s_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, %d);\n\t%s%s* %s = %s_Wrapper ? (%s%s*)(%s_Wrapper->ObjInst.Get()) : nullptr;"), *InParamName, InStackIndex, *MetaClassPrefix, *MetaClassName, *InParamName, *InParamName, *MetaClassPrefix, *MetaClassName, *InParamName);
+			BodyStr = FString::Printf(TEXT("%s%s* %s = Cast<%s%s>(FastLuaHelper::FetchObject(InL, %d));"), *MetaClassPrefix, *MetaClassName, *InParamName, *MetaClassPrefix, *MetaClassName, InStackIndex);
 		}
 		else if (const UScriptStruct* Struct = Cast<UScriptStruct>(InSruct))
 		{

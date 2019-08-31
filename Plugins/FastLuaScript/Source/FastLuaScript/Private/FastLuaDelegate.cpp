@@ -4,7 +4,50 @@
 #include "FastLuaScript.h"
 #include "lua.hpp"
 #include "FastLuaHelper.h"
+#include "FastLuaUnrealWrapper.h"
 
+int32 UFastLuaDelegate::Unbind()
+{
+	if (LuaState == nullptr)
+	{
+		return -1;
+	}
+
+	if (LuaFunctionID)
+	{
+		luaL_unref(LuaState, LUA_REGISTRYINDEX, LuaFunctionID);
+		LuaFunctionID = 0;
+	}
+
+	if (LuaSelfID)
+	{
+		luaL_unref(LuaState, LUA_REGISTRYINDEX, LuaSelfID);
+		LuaSelfID = 0;
+	}
+
+	lua_rawgetp(LuaState, LUA_REGISTRYINDEX, LuaState);
+	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(LuaState, -1);
+	lua_pop(LuaState, 1);
+	LuaState = nullptr;
+
+	if (bIsMulti && DelegateInst)
+	{
+		FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)DelegateInst;
+		MultiDelegate->Remove(this, UFastLuaDelegate::GetWrapperFunctionName());
+	}
+
+	if (!bIsMulti && DelegateInst)
+	{
+		FScriptDelegate* SingleDelegate = (FScriptDelegate*)DelegateInst;
+		SingleDelegate->Clear();
+	}
+
+	LuaWrapper->DelegateCallLuaList.Remove(this);
+
+	this->RemoveFromRoot();
+
+	return 0;
+}
 
 void UFastLuaDelegate::ProcessEvent(UFunction* InFunction, void* Parms)
 {
@@ -34,8 +77,8 @@ void UFastLuaDelegate::ProcessEvent(UFunction* InFunction, void* Parms)
 		else
 		{
 			//set params for lua function
-			//FastLuaHelper::PushProperty(LuaState, CurrentParam, Parms, CurrentParam->HasAnyPropertyFlags(CPF_OutParm));
-			//++ParamsNum;
+			FastLuaHelper::PushProperty(LuaState, CurrentParam, Parms, CurrentParam->HasAnyPropertyFlags(CPF_OutParm));
+			++ParamsNum;
 		}
 	}
 
@@ -49,38 +92,6 @@ void UFastLuaDelegate::ProcessEvent(UFunction* InFunction, void* Parms)
 	if (ReturnParam)
 	{
 		//get function return Value, in common
-		//FUnrealMisc::FetchProperty(LuaState, ReturnParam, Parms);
+		FastLuaHelper::FetchProperty(LuaState, ReturnParam, Parms);
 	}
-}
-
-bool UFastLuaDelegate::HotfixLuaFunction()
-{
-	if (LuaState == nullptr)
-	{
-		return false;
-	}
-
-	//unref old
-	if (LuaState && LuaFunctionID)
-	{
-		luaL_unref(LuaState, LUA_REGISTRYINDEX, LuaFunctionID);
-	}
-
-	//ref function
-	lua_rawgeti(LuaState, LUA_REGISTRYINDEX, LuaSelfID);
-	lua_getfield(LuaState, -1, TCHAR_TO_UTF8(*LuaFunctionName));
-	if (lua_isfunction(LuaState, -1))
-	{
-		LuaFunctionID = luaL_ref(LuaState, LUA_REGISTRYINDEX);
-	}
-	else
-	{
-		lua_pop(LuaState, 1);
-		return false;
-	}
-
-	//remove self
-	lua_pop(LuaState, 1);
-
-	return true;
 }

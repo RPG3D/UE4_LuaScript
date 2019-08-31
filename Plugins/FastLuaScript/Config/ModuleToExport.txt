@@ -4,3 +4,4 @@
 /Script/UMG
 /Script/Slate
 /Script/UE4_LuaScript
+/Script/FastLuaScript

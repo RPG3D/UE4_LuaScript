@@ -81,13 +81,16 @@ public:
 	//start with U or A
 	static bool IsPointerType(const FString& InTypeName);
 
+	static void PushProperty(lua_State* InL, UProperty* InProp, void* InBuff, bool bRef = true);
+	static void FetchProperty(lua_State* InL, const UProperty* InProp, void* InBuff, int32 InStackIndex = -1, FName ErrorName = TEXT(""));
+
 	static UObject* FetchObject(lua_State* InL, int32 InIndex);
 	static void PushObject(lua_State* InL, UObject* InObj);
 
 	static void* FetchStruct(lua_State* InL, int32 InIndex);
 	static void PushStruct(lua_State* InL, const UScriptStruct* InStruct, const void* InBuff);
 
-	static void PushDelegate(lua_State* InL, class UObject* InObject, const FString& InDelegateName, bool InMulti = true);
+	static void PushDelegate(lua_State* InL, void* InDelegateProperty, void* InBuff, bool InMulti);
 
 	static int32 CallFunction(lua_State* L);
 
