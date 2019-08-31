@@ -290,8 +290,6 @@ void FUnrealMisc::FetchProperty(lua_State* InL, const UProperty* InProp, void* I
 
 UObject* FUnrealMisc::FetchObject(lua_State* InL, int32 InIndex)
 {
-	InIndex = lua_absindex(InL, InIndex);
-
 	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, InIndex);
 	if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Object)
 	{
@@ -378,42 +376,18 @@ void FUnrealMisc::PushStruct(lua_State* InL, const UScriptStruct* InStruct, cons
 
 void FUnrealMisc::PushDelegate(lua_State* InL, void* InDelegateProperty, void* InBuff, bool InMulti)
 {
-	bool bValid = false;
-	if (InMulti == false)
-	{
-		FScriptDelegate* Delegate = ((UDelegateProperty*)InDelegateProperty)->GetPropertyValuePtr_InContainer(InBuff);
-		if (Delegate)
-		{
-			FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
-			Wrapper->WrapperType = ELuaUnrealWrapperType::Delegate;
-			Wrapper->bIsMulti = false;
-			Wrapper->DelegateInst = Delegate;
-			Wrapper->FunctionSignature = ((UDelegateProperty*)InDelegateProperty)->SignatureFunction;
-			bValid = true;
-		}
-	}
-	else
-	{
-		FMulticastScriptDelegate* Delegate = ((UMulticastDelegateProperty*)InDelegateProperty)->ContainerPtrToValuePtr<FMulticastScriptDelegate>(InBuff);
-		if (Delegate)
-		{
-			FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
-			Wrapper->WrapperType = ELuaUnrealWrapperType::Delegate;
-			Wrapper->bIsMulti = true;
-			Wrapper->DelegateInst = Delegate;
-			Wrapper->FunctionSignature = ((UMulticastDelegateProperty*)InDelegateProperty)->SignatureFunction;
-			bValid = true;
-		}
-	}
+	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
+	Wrapper->WrapperType = ELuaUnrealWrapperType::Delegate;
+	Wrapper->bIsMulti = InMulti;
+	Wrapper->DelegateInst = InMulti ? (void*)((UMulticastDelegateProperty*)InDelegateProperty)->ContainerPtrToValuePtr<FMulticastScriptDelegate>(InBuff) : (void*)((UDelegateProperty*)InDelegateProperty)->GetPropertyValuePtr_InContainer(InBuff);
+	Wrapper->FunctionSignature = InMulti ? ((UMulticastDelegateProperty*)InDelegateProperty)->SignatureFunction : ((UDelegateProperty*)InDelegateProperty)->SignatureFunction;
 
-	if (bValid)
-	{
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-		FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(InL, -1);
-		lua_pop(InL, 1);
-		lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->DelegateMetatableIndex);
-		lua_setmetatable(InL, -2);
-	}
+
+	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+	FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(InL, -1);
+	lua_pop(InL, 1);
+	lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->DelegateMetatableIndex);
+	lua_setmetatable(InL, -2);
 }
 
 int32 FUnrealMisc::GetObjectProperty(lua_State* L)
