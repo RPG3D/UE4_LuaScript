@@ -387,17 +387,22 @@ int32 GenerateLua::GenerateCodeForClass(const class UClass* InClass) const
 				continue;
 			}
 
-			++ExportedFieldCount;
+			if (InClass->FindFunctionByName(*FString(FString("Get") + PropName)) == nullptr)
+			{
+				FunctionList.Add(FString("Get") + PropName, FString("Lua_Get") + PropName);
+				FString PropGetDeclareStr = FString::Printf(TEXT("\tstatic int32 Lua_Get%s(lua_State* InL);\n"), *PropName);
+				HeaderStr += PropGetDeclareStr;
+				++ExportedFieldCount;
+			}
 
-			FunctionList.Add(FString("Get_") + PropName, FString("Lua_Get_") + PropName);
-			FunctionList.Add(FString("Set_") + PropName, FString("Lua_Set_") + PropName);
+			if (InClass->FindFunctionByName(*FString(FString("Set") + PropName)) == nullptr)
+			{
+				FunctionList.Add(FString("Set") + PropName, FString("Lua_Set") + PropName);
+				FString PropSetDeclareStr = FString::Printf(TEXT("\tstatic int32 Lua_Set%s(lua_State* InL);\n\n"), *PropName);
+				HeaderStr += PropSetDeclareStr;
+				++ExportedFieldCount;
+			}
 
-
-			FString PropGetDeclareStr = FString::Printf(TEXT("\tstatic int32 Lua_Get_%s(lua_State* InL);\n"), *PropName);
-			HeaderStr += PropGetDeclareStr;
-
-			FString PropSetDeclareStr = FString::Printf(TEXT("\tstatic int32 Lua_Set_%s(lua_State* InL);\n\n"), *PropName);
-			HeaderStr += PropSetDeclareStr;
 		}
 
 		if (ExportedFieldCount < 1)
@@ -470,25 +475,30 @@ int32 GenerateLua::GenerateCodeForClass(const class UClass* InClass) const
 
 			FString PropName = It->GetName();
 
-			FString PropGetDefineBeginStr = FString::Printf(TEXT("int32 Lua_%s::Lua_Get_%s(lua_State* InL)\n{\n"), *ClassName, *PropName);
-			SourceStr += PropGetDefineBeginStr;
+			if (InClass->FindFunctionByName(*FString(FString("Get") + PropName)) == nullptr)
+			{
+				FString PropGetDefineBeginStr = FString::Printf(TEXT("int32 Lua_%s::Lua_Get%s(lua_State* InL)\n{\n"), *ClassName, *PropName);
+				SourceStr += PropGetDefineBeginStr;
 
-			FString GetBodyStr = FString("\t") + GenerateGetPropertyStr(*It, PropName, InClass);
-			SourceStr += GetBodyStr;
+				FString GetBodyStr = FString("\t") + GenerateGetPropertyStr(*It, PropName, InClass);
+				SourceStr += GetBodyStr;
 
-			FString PropGetEndStr = FString("\n\n}\n\n");
-			SourceStr += PropGetEndStr;
+				FString PropGetEndStr = FString("\n\n}\n\n");
+				SourceStr += PropGetEndStr;
+			}
 
+			if (InClass->FindFunctionByName(*FString(FString("Set") + PropName)) == nullptr)
+			{
+				FString PropSetDefineBeginStr = FString::Printf(TEXT("int32 Lua_%s::Lua_Set%s(lua_State* InL)\n{\n"), *ClassName, *PropName);
+				SourceStr += PropSetDefineBeginStr;
 
+				FString SetBodyStr = FString("\t") + GenerateSetPropertyStr(*It, PropName, InClass);
+				SourceStr += SetBodyStr;
 
-			FString PropSetDefineBeginStr = FString::Printf(TEXT("int32 Lua_%s::Lua_Set_%s(lua_State* InL)\n{\n"), *ClassName, *PropName);
-			SourceStr += PropSetDefineBeginStr;
+				FString PropSetEndStr = FString("\n\n}\n\n");
+				SourceStr += PropSetEndStr;
+			}
 
-			FString SetBodyStr = FString("\t") + GenerateSetPropertyStr(*It, PropName, InClass);
-			SourceStr += SetBodyStr;
-
-			FString PropSetEndStr = FString("\n\n}\n\n");
-			SourceStr += PropSetEndStr;
 		}
 
 

@@ -46,7 +46,7 @@ function MainTable.PostInit()
 	MainTable.UIInst = WidgetBlueprintLibrary:Create(G_GameInstance, UIClass, PlayerCtrl)
 	MainTable.UIInst:AddToViewport(0)
 	
-	MainTable.DelegateObj = G_GameInstance:Get_OnUIEvent():Bind(MainTable.HandleUIEvent, MainTable)
+	MainTable.DelegateObj = G_GameInstance:GetOnUIEvent():Bind(MainTable.HandleUIEvent, MainTable)
 end
 
 function Main()
@@ -58,7 +58,7 @@ function Main()
 	
 	G_GameInstance = Unreal.LuaGetGameInstance()
 
-	GTimer:SetTimer('PostInit', 1, 0.1, MainTable.PostInit, nil)
+	GTimer:SetTimer('PostInit', 3, 1, MainTable.PostInit, nil)
 end
 
 
