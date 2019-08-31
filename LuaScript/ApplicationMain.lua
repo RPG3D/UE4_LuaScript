@@ -9,6 +9,13 @@ GameplayStatics = GameplayStatics or Unreal.LuaGetUnrealCDO('GameplayStatics')
 
 PlayerController = PlayerController or Unreal.LuaGetUnrealCDO('PlayerController')
 
+
+MainTable = MainTable or {}
+
+function MainTable.HandleUIEvent()
+
+end
+
 function Main()
 
 	print(("----------Lua Ram: %.2fMB----------"):format(collectgarbage("count") / 1024))
@@ -19,14 +26,15 @@ function Main()
 	
 	local PlayerCtrl = GameplayStatics:GetPlayerController(G_GameInstance, 0) or PlayerController
 	
-	local Plane = Unreal.LuaNewStruct('Plane')
-	local x = Plane:Get_X()
-	print(x)
-	Plane:Set_X(1111)
-	x = Plane:Get_X()
-	print(x)
+	local btn = Unreal.LuaNewObject(PlayerCtrl, 'Button')
+	local btnEvent = btn:Get_OnClicked()
 	
-	print(Plane:Get_Z())
+	btnEvent:Bind('UniqueName', MainTable, 'HandleUIEvent')
+	
+	local img = Unreal.LuaNewObject(PlayerCtrl, 'Image')
+	local imgEvent = img:Get_OnMouseButtonDownEvent()
+	
+	Unreal.RegisterTickFunction(MainTable.HandleUIEvent)
 end
 
 

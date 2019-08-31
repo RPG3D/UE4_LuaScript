@@ -40,7 +40,23 @@ public:
 		return CachedGameInstance;
 	}
 
+	int32 GetDelegateMetatableIndex() const
+	{
+		return DelegateMetatableIndex;
+	}
+
+	//never call me from C++!
+	//call Unreal.RegisterTickFunction(function() print(1) end) in Lua code!
+	void SetLuaTickFunction(int32 InFunctionIndex)
+	{
+		LuaTickFunctionIndex = InFunctionIndex;
+	}
+
+	//lua UE4's delegate proxy object
+	TArray<class UFastLuaDelegate*> DelegateCallLuaList;
 protected:
+
+	void InitDelegateMetatable();
 
 	//lua has to hold a long life time Uobject, GameInstance is a right one 
 	class UGameInstance* CachedGameInstance = nullptr;
@@ -57,8 +73,9 @@ protected:
 
 	bool HandleLuaTick(float InDelta);
 
-	int32 ClassMetatableIdx = 0;
-	int32 StructMetatableIdx = 0;
+	//reference in registry table
+	int32 LuaTickFunctionIndex = 0;
+
 	int32 DelegateMetatableIndex = 0;
 
 	//lua UE4's delegate proxy object

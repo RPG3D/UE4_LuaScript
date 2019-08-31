@@ -22,6 +22,7 @@ static int InitUnrealLib(lua_State* L)
 		{"LuaGetUnrealCDO", FastLuaHelper::LuaGetUnrealCDO},
 		{"LuaNewObject", FastLuaHelper::LuaNewObject},
 		{"LuaNewStruct", FastLuaHelper::LuaNewStruct},
+		{"RegisterTickFunction", FastLuaHelper::RegisterTickFunction},
 		{nullptr, nullptr}
 	};
 
@@ -119,6 +120,22 @@ static int RequireFromUFS(lua_State* InL)
 
 
 
+void FastLuaUnrealWrapper::InitDelegateMetatable()
+{
+	static const luaL_Reg DelegateFuncs[] =
+	{
+		{"Bind", FastLuaHelper::LuaBindDelegate},
+		{"Unbind", FastLuaHelper::LuaUnbindDelegate},
+		{nullptr, nullptr},
+	};
+
+	luaL_newlib(GetLuaSate(), DelegateFuncs);
+	lua_pushvalue(GetLuaSate(), -1);
+	lua_setfield(GetLuaSate(), -2, "__index");
+
+	DelegateMetatableIndex = luaL_ref(GetLuaSate(), LUA_REGISTRYINDEX);
+}
+
 FastLuaUnrealWrapper::FastLuaUnrealWrapper()
 {
 }
@@ -162,6 +179,8 @@ void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 
 	RegisterRawAPI(L);
 
+	InitDelegateMetatable();
+
 	//set package path
 	{
 		FString LuaEnvPath = FPaths::ProjectDir() / FString("LuaScript/?.lua") + FString(";") + FPaths::ProjectDir() / FString("LuaScript/?/Init.lua");
@@ -204,30 +223,26 @@ bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 {
 	static float Count = 0.f;
 
-	if (L)
+	if (L && LuaTickFunctionIndex)
 	{
 		int32 tp = lua_gettop(L);
-		lua_getglobal(L, "Unreal");
-		if (lua_istable(L, -1))
+		lua_rawgeti(L, LUA_REGISTRYINDEX, LuaTickFunctionIndex);
+		if (lua_isfunction(L, -1))
 		{
-			lua_getfield(L, -1, "Ticker");
-			if (lua_isfunction(L, -1))
+			//SCOPE_CYCLE_COUNTER(STAT_LuaTick);
+			lua_pushnumber(L, InDeltaTime);
+			int32 Ret = lua_pcall(L, 1, 0, 0);
+			if (Ret)
 			{
-				//SCOPE_CYCLE_COUNTER(STAT_LuaTick);
-				lua_pushnumber(L, InDeltaTime);
-				int32 Ret = lua_pcall(L, 1, 0, 0);
-				if (Ret)
+				Count += InDeltaTime;
+				if (Count > 3.f)
 				{
-					Count += InDeltaTime;
-					if (Count > 2.f)
-					{
-						Count = 0.f;
-						FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(L, -1))), 1, this);
-					}
-
+					Count = 0.f;
+					FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(L, -1))), 1, this);
 				}
-				
+
 			}
+				
 		}
 
 		lua_settop(L, tp);
@@ -236,6 +251,7 @@ bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 	return true;
 }
 
+//Lua usage: LoadMapEndedEvent:Bind("LuaBindLoadMapEnded", LuaObj, LuaFunctionName)
 void FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString("ApplicationMain")*/)
 {
 	//load entry lua

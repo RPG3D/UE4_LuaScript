@@ -87,7 +87,7 @@ public:
 	static void* FetchStruct(lua_State* InL, int32 InIndex);
 	static void PushStruct(lua_State* InL, const UScriptStruct* InStruct, const void* InBuff);
 
-	static void PushDelegate(lua_State* InL, void* InDelegateInst, bool InMulti = true);
+	static void PushDelegate(lua_State* InL, class UObject* InObject, const FString& InDelegateName, bool InMulti = true);
 
 	static int32 CallFunction(lua_State* L);
 
@@ -107,4 +107,9 @@ public:
 	static int LuaNewStruct(lua_State* InL);
 	static int LuaCallUnrealDelegate(lua_State* InL);
 	static int PrintLog(lua_State* L);
+
+	static int LuaBindDelegate(lua_State* InL);
+	static int LuaUnbindDelegate(lua_State* InL);
+
+	static int RegisterTickFunction(lua_State* InL);
 };

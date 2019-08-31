@@ -713,11 +713,21 @@ FString GenerateLua::GeneratePushPropertyStr(const UProperty* InProp, const FStr
 	}
 	else if (const UDelegateProperty* DelegateProp = Cast<UDelegateProperty>(InProp))
 	{
-		BodyStr = FString::Printf(TEXT("FastLuaHelper::PushDelegate(InL, (void*)&%s, false);"), *InParamName);
+		TArray<FString> ParamNames;
+		InParamName.ParseIntoArray(ParamNames, *FString("->"));
+		if (ParamNames.Num() == 2)
+		{
+			BodyStr = FString::Printf(TEXT("FastLuaHelper::PushDelegate(InL, %s, \"%s\", false);"), *ParamNames[0], *ParamNames[1]);
+		}
 	}
 	else if (const UMulticastDelegateProperty* MultiDelegateProp = Cast<UMulticastDelegateProperty>(InProp))
 	{
-		BodyStr = FString::Printf(TEXT("FastLuaHelper::PushDelegate(InL, (void*)&%s, true);"), *InParamName);
+		TArray<FString> ParamNames;
+		InParamName.ParseIntoArray(ParamNames, *FString("->"));
+		if (ParamNames.Num() == 2)
+		{
+			BodyStr = FString::Printf(TEXT("FastLuaHelper::PushDelegate(InL, %s, \"%s\", true);"), *ParamNames[0], *ParamNames[1]);
+		}
 	}
 	else if (const UArrayProperty* ArrayProp = Cast<UArrayProperty>(InProp))
 	{
