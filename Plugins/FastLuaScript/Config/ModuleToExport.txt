@@ -1,7 +1,7 @@
-/Script/Core
-/Script/CoreUObject
-/Script/Engine
-/Script/UMG
-/Script/Slate
-/Script/UE4_LuaScript
-/Script/FastLuaScript
+Core
+CoreUObject
+Engine
+UMG
+Slate
+ClassicRPG
+FastLuaScript

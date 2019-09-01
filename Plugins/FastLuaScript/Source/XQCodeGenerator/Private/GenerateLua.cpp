@@ -318,7 +318,7 @@ int32 GenerateLua::GenerateCodeForClass(const class UClass* InClass) const
 	bool bShouldExportModule = false;
 	for (int32 i = 0; i < ModulesShouldExport.Num(); ++i)
 	{
-		if (PkgName == ModulesShouldExport[i])
+		if (PkgName == FString("/Script/") + ModulesShouldExport[i])
 		{
 			bShouldExportModule = true;
 			break;
@@ -536,7 +536,7 @@ int32 GenerateLua::GenerateCodeForStruct(const class UScriptStruct* InStruct) co
 	bool bShouldExportModule = false;
 	for (int32 i = 0; i < ModulesShouldExport.Num(); ++i)
 	{
-		if (PkgName == ModulesShouldExport[i])
+		if (PkgName == FString("/Script/") + ModulesShouldExport[i])
 		{
 			bShouldExportModule = true;
 			break;

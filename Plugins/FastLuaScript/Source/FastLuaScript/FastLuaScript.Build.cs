@@ -11,8 +11,8 @@ public class FastLuaScript : ModuleRules
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
         string LuaAPIFilePath = Path.Combine(ModuleDirectory, "Generated/FastLuaAPI.h");
-        int Exist = File.Exists(LuaAPIFilePath) ? 1 : 0;
-        string MacroDef = string.Format("LUA_CODE_GENERATED={0}", Exist);
+        int LuaCodeGenerated = File.Exists(LuaAPIFilePath) ? 1 : 0;
+        string MacroDef = string.Format("LUA_CODE_GENERATED={0}", LuaCodeGenerated);
         PublicDefinitions.Add(MacroDef);
 
         Console.WriteLine(MacroDef);
@@ -39,13 +39,22 @@ public class FastLuaScript : ModuleRules
                 "UMG",
                 "InputCore",
 				// ... add other public dependencies that you statically link with here ...
-                "LuaSource",
-
-                //project/plugin module to export:
-                "UE4_LuaScript"
+                "LuaSource"
             }
 			);
-			
+
+        //project/plugin module to export:
+        string ConfigFilePath = Path.Combine(ModuleDirectory, "../../Config/ModuleToExport.txt");
+        if(File.Exists(ConfigFilePath))
+        {
+            StreamReader Stream = File.OpenText(ConfigFilePath);
+            string ModuleToExport = Stream.ReadToEnd();
+            string[] ModuleList = ModuleToExport.Split(new char[2] {'\n','\r'}, StringSplitOptions.RemoveEmptyEntries);
+            for(int i = 0; i < ModuleList.Length; ++i)
+            {
+                PublicDependencyModuleNames.Add(ModuleList[i]);
+            }
+        }
 		
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
