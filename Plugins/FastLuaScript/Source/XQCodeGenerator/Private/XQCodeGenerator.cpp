@@ -14,6 +14,8 @@
 #include "LevelEditor.h"
 #include "MultiBoxBuilder.h"
 
+#include "Interfaces/IMainFrameModule.h"
+
 #include "GenerateLua.h"
 
 #endif
@@ -42,6 +44,18 @@ public:
 
 #endif
 
+
+static void OnMainFrameInitCompleted(TSharedPtr<SWindow> InWin, bool InShowOpenProject)
+{
+	FXQCodeGeneratorModule* TempModule = (FXQCodeGeneratorModule*)FModuleManager::Get().GetModule(FName("XQCodeGenerator"));
+	if (TempModule == nullptr)
+	{
+		return;
+	}
+
+	TempModule->HandleGenerateLua();
+}
+
 void FXQCodeGeneratorModule::StartupModule()
 {
 	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
@@ -53,6 +67,10 @@ void FXQCodeGeneratorModule::StartupModule()
 	}
 
 #if WITH_EDITOR
+	if (Cmd.Contains(FString("-FastLua"), ESearchCase::IgnoreCase))
+	{
+		IMainFrameModule::Get().OnMainFrameCreationFinished().AddStatic(OnMainFrameInitCompleted);
+	}
 
 	FGenerateLuaCmd::Register();
 
@@ -87,6 +105,13 @@ void FXQCodeGeneratorModule::HandleGenerateLua()
 	GenerateLua Inst;
 	Inst.InitConfig();
 	Inst.GeneratedCode();
+
+	FString Cmd = FCommandLine::Get();
+	if (Cmd.Contains(FString("-FastLua"), ESearchCase::IgnoreCase))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Generate lua code completed!, editor is exiting..."));
+		FGenericPlatformMisc::RequestExit(false);
+	}
 #endif
 }
 
