@@ -7,6 +7,7 @@
 #include "FastLuaUnrealWrapper.h"
 #include "FastLuaScript.h"
 #include "FastLuaDelegate.h"
+#include "FastLuaStat.h"
 
 bool FastLuaHelper::HasScriptAccessibleField(const UStruct* InStruct)
 {
@@ -465,7 +466,7 @@ void FastLuaHelper::PushObject(lua_State* InL, UObject* InObj)
 
 		UClass* Class = InObj->GetClass();
 
-		//SCOPE_CYCLE_COUNTER(STAT_FindClassMetatable);
+		SCOPE_CYCLE_COUNTER(STAT_FindClassMetatable);
 		while (Class)
 		{
 			lua_rawgetp(InL, LUA_REGISTRYINDEX, Class);
@@ -503,7 +504,7 @@ void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, co
 
 	InStruct->CopyScriptStruct(&(Wrapper->StructInst), InBuff);
 
-	//SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
+	SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InStruct);
 	if (lua_istable(InL, -1))
 	{
@@ -603,18 +604,19 @@ void* FastLuaHelper::LuaAlloc(void* ud, void* ptr, size_t osize, size_t nsize)
 	if (nsize == 0)
 	{
 		FMemory::Free(ptr);
+		ptr = nullptr;
 		return nullptr;
 	}
 	else
 	{
 		ptr = FMemory::Realloc(ptr, nsize);
-		//if (Inst && Inst->bStatMemory && Inst->GetLuaSate())
-		//{
-			//int k = lua_gc(Inst->GetLuaSate(), LUA_GCCOUNT);
-			//int b = lua_gc(Inst->GetLuaSate(), LUA_GCCOUNTB);
-			//Inst->LuaMemory = (k << 10) + b;
-			//SET_MEMORY_STAT(STAT_LuaMemory, Inst->LuaMemory);
-		//}
+		if (Inst && Inst->bStatMemory && Inst->GetLuaSate())
+		{
+			int k = lua_gc(Inst->GetLuaSate(), LUA_GCCOUNT);
+			int b = lua_gc(Inst->GetLuaSate(), LUA_GCCOUNTB);
+			Inst->LuaMemory = (k << 10) + b;
+			SET_MEMORY_STAT(STAT_LuaMemory, Inst->LuaMemory);
+		}
 		return ptr;
 	}
 }
@@ -1087,17 +1089,19 @@ int FastLuaHelper::RegisterTickFunction(lua_State* InL)
 		if (RefIndex && LuaWrapper)
 		{
 			LuaWrapper->SetLuaTickFunction(RefIndex);
-			lua_pushboolean(InL, true);
 		}
-		else
-		{
-			lua_pushboolean(InL, false);
-		}
+
 	}
 	else
 	{
-		lua_pushboolean(InL, false);
+		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+		FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
+		lua_pop(InL, 1);
+
+		luaL_unref(InL, LUA_REGISTRYINDEX, LuaWrapper->GetLuaTickFunction());
+		LuaWrapper->SetLuaTickFunction(0);
 	}
 
+	lua_pushboolean(InL, true);
 	return 1;
 }

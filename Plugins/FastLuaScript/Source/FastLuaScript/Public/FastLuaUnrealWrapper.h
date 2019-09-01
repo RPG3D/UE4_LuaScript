@@ -52,6 +52,11 @@ public:
 		LuaTickFunctionIndex = InFunctionIndex;
 	}
 
+	int32 GetLuaTickFunction() const
+	{
+		return LuaTickFunctionIndex;
+	}
+
 	//lua UE4's delegate proxy object
 	TArray<class UFastLuaDelegate*> DelegateCallLuaList;
 protected:
@@ -78,12 +83,10 @@ protected:
 
 	int32 DelegateMetatableIndex = 0;
 
-	//lua UE4's delegate proxy object
-	//TArray<class UDelegateCallLua*> DelegateCallLuaList;
-
+public:
 	FString LuaStateName = FString("Unknown");
 
-	bool bStatMemory = false;
-	size_t LuaMemory = 0;
+	bool bStatMemory = true;
+	int32 LuaMemory = 0;
 
 };

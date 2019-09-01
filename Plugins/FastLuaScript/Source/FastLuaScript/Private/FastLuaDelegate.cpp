@@ -5,6 +5,7 @@
 #include "lua.hpp"
 #include "FastLuaHelper.h"
 #include "FastLuaUnrealWrapper.h"
+#include "FastLuaStat.h"
 
 int32 UFastLuaDelegate::Unbind()
 {
@@ -51,7 +52,7 @@ int32 UFastLuaDelegate::Unbind()
 
 void UFastLuaDelegate::ProcessEvent(UFunction* InFunction, void* Parms)
 {
-	//SCOPE_CYCLE_COUNTER(STAT_DelegateCallLua);
+	SCOPE_CYCLE_COUNTER(STAT_DelegateCallLua);
 	if (LuaState == nullptr || FunctionSignature == nullptr )
 	{
 		return;

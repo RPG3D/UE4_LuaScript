@@ -9,7 +9,7 @@
 #include "PlatformFilemanager.h"
 #include "UObject/StructOnScope.h"
 #include "FastLuaHelper.h"
-
+#include "FastLuaStat.h"
 
 
 static int InitUnrealLib(lua_State* L)
@@ -222,14 +222,13 @@ void FastLuaUnrealWrapper::Reset()
 bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 {
 	static float Count = 0.f;
-
+	SCOPE_CYCLE_COUNTER(STAT_LuaTick);
 	if (L && LuaTickFunctionIndex)
 	{
 		int32 tp = lua_gettop(L);
 		lua_rawgeti(L, LUA_REGISTRYINDEX, LuaTickFunctionIndex);
 		if (lua_isfunction(L, -1))
 		{
-			//SCOPE_CYCLE_COUNTER(STAT_LuaTick);
 			lua_pushnumber(L, InDeltaTime);
 			int32 Ret = lua_pcall(L, 1, 0, 0);
 			if (Ret)

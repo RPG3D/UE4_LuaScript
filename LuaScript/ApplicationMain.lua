@@ -32,8 +32,8 @@ function MainTable:HandleUIEvent(InParam)
 
 	print(InParam:GetX(), InParam:GetY())
 	
-	--G_GameInstance:Get_OnUIEvent():Unbind(MainTable.DelegateObj)
-	MainTable.DelegateObj:Unbind(MainTable.DelegateObj)
+	--G_GameInstance:GetOnUIEvent():Unbind(MainTable.DelegateObj)
+	--MainTable.DelegateObj:Unbind(MainTable.DelegateObj)
 end
 
 function MainTable.PostInit()
@@ -45,6 +45,8 @@ function MainTable.PostInit()
 	
 	MainTable.UIInst = WidgetBlueprintLibrary:Create(G_GameInstance, UIClass, PlayerCtrl)
 	MainTable.UIInst:AddToViewport(0)
+	
+	PlayerCtrl:SetbShowMouseCursor(true)
 	
 	MainTable.DelegateObj = G_GameInstance:GetOnUIEvent():Bind(MainTable.HandleUIEvent, MainTable)
 end
@@ -58,7 +60,13 @@ function Main()
 	
 	G_GameInstance = Unreal.LuaGetGameInstance()
 
-	GTimer:SetTimer('PostInit', 3, 1, MainTable.PostInit, nil)
+	GTimer:SetTimer('PostInit', 2, 1, MainTable.PostInit, nil)
+	
+	local color = KismetMathLibrary:MakeColor(0.4, 0.2, 0.7, 1.0)
+	local r, g, b, a = KismetMathLibrary:BreakColor(color)
+	
+	print(r, g, b, a)
+
 end
 
 
