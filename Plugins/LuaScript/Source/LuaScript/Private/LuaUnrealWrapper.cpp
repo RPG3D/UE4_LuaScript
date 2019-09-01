@@ -59,62 +59,6 @@ void FLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 	}
 }
 
-void FLuaUnrealWrapper::RegisterProperty(lua_State* InL, const UProperty* InProperty, bool InIsStruct)
-{
-	if (FUnrealMisc::IsScriptReadableProperty(InProperty) == false)
-	{
-		return;
-	}
-
-	{
-		const FString PropName = "Get" + InProperty->GetName();
-
-		lua_pushlightuserdata(InL, (void*)InProperty);
-		if (InIsStruct)
-		{
-			lua_pushcclosure(InL, FUnrealMisc::GetStructProperty, 1);
-		}
-		else
-		{
-			lua_pushcclosure(InL, FUnrealMisc::GetObjectProperty, 1);
-		}
-
-		lua_setfield(InL, -2, TCHAR_TO_UTF8(*PropName));
-	}
-
-	{
-		const FString PropName = "Set" + InProperty->GetName();
-
-		lua_pushlightuserdata(InL, (void*)InProperty);
-		if (InIsStruct)
-		{
-			lua_pushcclosure(InL, FUnrealMisc::SetStructProperty, 1);
-		}
-		else
-		{
-			lua_pushcclosure(InL, FUnrealMisc::SetObjectProperty, 1);
-		}
-
-
-		lua_setfield(InL, -2, TCHAR_TO_UTF8(*PropName));
-	}
-}
-
-void FLuaUnrealWrapper::RegisterFunction(lua_State* InL, const UFunction* InFunction, const UClass* InClass)
-{
-	if (InClass == nullptr || FUnrealMisc::IsScriptCallableFunction(InFunction) == false)
-	{
-		return;
-	}
-
-	const FString FuncName = InFunction->GetName();
-
-	lua_pushlightuserdata(InL, (void*)InFunction);
-	lua_pushcclosure(InL, FUnrealMisc::CallFunction, 1);
-
-	lua_setfield(InL, -2, TCHAR_TO_UTF8(*FuncName));
-}
-
 void FLuaUnrealWrapper::Reset()
 {
 	if (L)
@@ -177,50 +121,35 @@ void FLuaUnrealWrapper::RegisterUnreal(UGameInstance* InGameInst)
 
 	RegisterRawAPI(L);
 
+	//create a table for UClass
 	lua_newtable(L);
 	{
-		lua_pushvalue(L, -1);
+		lua_pushcfunction(L, FUnrealMisc::ObjectIndex);
+		lua_setfield(L, -2, "__index");
+
+		lua_pushcfunction(L, FUnrealMisc::ObjectNewIndex);
+		lua_setfield(L, -2, "__newindex");
+
 		ClassMetatableIdx = luaL_ref(L, LUA_REGISTRYINDEX);
 	}
-	int moduleIdx = lua_gettop(L);
-	for (TObjectIterator<UClass>It; It; ++It)
-	{
-		if (const UClass* Class = Cast<const UClass>(*It))
-		{
-			if (RegisterClass(L, moduleIdx, Class))
-			{
-				lua_pop(L, 1);
-			}
-		}
-	}
-	lua_pop(L, 1);
 
+	//create a table for Struct
 	lua_newtable(L);
 	{
-		lua_pushvalue(L, -1);
+		lua_pushcfunction(L, FUnrealMisc::StructIndex);
+		lua_setfield(L, -2, "__index");
+
+		lua_pushcfunction(L, FUnrealMisc::StructNewIndex);
+		lua_setfield(L, -2, "__newindex");
+
 		StructMetatableIdx = luaL_ref(L, LUA_REGISTRYINDEX);
 	}
-	moduleIdx = lua_gettop(L);
-	for (TObjectIterator<UScriptStruct>It; It; ++It)
-	{
-		if (const UScriptStruct* ScriptStruct = Cast<UScriptStruct>(*It))
-		{
-			if (RegisterStruct(L, moduleIdx, ScriptStruct))
-			{
-				lua_pop(L, 1);
-			}
-		}
-	}
-	lua_pop(L, 1);
 
 	lua_newtable(L);
 	{
-		lua_pushvalue(L, -1);
+		RegisterDelegate(L);
 		DelegateMetatableIndex = luaL_ref(L, LUA_REGISTRYINDEX);
 	}
-	moduleIdx = lua_gettop(L);
-	RegisterDelegate(L, moduleIdx);
-	lua_pop(L, 1);
 
 	//set package path
 	{
@@ -247,33 +176,18 @@ bool FLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 {
 	static float Count = 0.f;
 
-	if (L)
+	if (L && LuaTickFunctionIndex)
 	{
-		int32 tp = lua_gettop(L);
-		lua_getglobal(L, "Unreal");
-		if (lua_istable(L, -1))
+		lua_rawgeti(L, LUA_REGISTRYINDEX, LuaTickFunctionIndex);
+		if (lua_isfunction(L, -1))
 		{
-			lua_getfield(L, -1, "Ticker");
-			if (lua_isfunction(L, -1))
-			{
-				SCOPE_CYCLE_COUNTER(STAT_LuaTick);
-				lua_pushnumber(L, InDeltaTime);
-				int32 Ret = lua_pcall(L, 1, 0, 0);
-				if (Ret)
-				{
-					Count += InDeltaTime;
-					if (Count > 2.f)
-					{
-						Count = 0.f;
-						FUnrealMisc::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(L, -1))), 1, this);
-					}
-
-				}
-				
-			}
+			lua_pushnumber(L, InDeltaTime);
+			lua_pcall(L, 1, 0, 0);
 		}
-
-		lua_settop(L, tp);
+		else
+		{
+			lua_pop(L, 1);
+		}
 	}
 
 	return true;
@@ -305,146 +219,32 @@ void FLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString("Ap
 
 }
 
-bool FLuaUnrealWrapper::RegisterClass(lua_State* InL, int32 InModuleIndex, const UClass* InClass)
-{
-	//find UClass/Index in Metatable[InClass]
-	lua_rawgetp(InL, InModuleIndex, InClass);
-	if (lua_istable(InL, -1))
-	{
-		return true;
-	}
-	else
-	{
-		//pop nil
-		lua_pop(InL, 1);
-	}
 
-	if (FUnrealMisc::HasScriptAccessibleField(InClass) == false)
+bool FLuaUnrealWrapper::RegisterDelegate(lua_State* InL)
+{
+	if (lua_istable(InL, -1) == false)
 	{
 		return false;
 	}
 
-	//create a table for UClass
-	lua_newtable(InL);
-	int32 ClassIndex = lua_gettop(InL);
-
-	//Metatable[InClass] = class metatable
-	{
-		lua_pushvalue(InL, ClassIndex);
-		lua_rawsetp(InL, InModuleIndex, InClass);
-	}
-
-	//table.__index = table, methods are stored in metatable
-	lua_pushstring(InL, "__index");
-	lua_pushvalue(InL, ClassIndex);
-	lua_rawset(InL, ClassIndex);
-
-	bool bHasSuper = false;
-	if (const UClass* SuperClass = InClass->GetSuperClass())
-	{
-		bHasSuper = RegisterClass(InL, InModuleIndex, SuperClass);
-		if (bHasSuper)
-		{
-			//set parent class's table as the metatable for current class's table
-			lua_setmetatable(InL, ClassIndex);
-		}
-	}
-
-	//register property firstly. so if the class has is Get/Set function, it can override custom Get/Set function!
-	for (TFieldIterator<const UProperty> It(InClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
-	{
-		RegisterProperty(InL, *It, false);
-	}
-
-	for (TFieldIterator<const UFunction> It(InClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
-	{
-		RegisterFunction(InL, *It, InClass);
-	}
-
-	return true;
-}
-
-
-bool FLuaUnrealWrapper::RegisterStruct(lua_State* InL, int32 InModuleIndex, const UScriptStruct* InStruct)
-{
-	//find UScriptStruct/Index in ModuleIndex
-	lua_rawgetp(InL, InModuleIndex, InStruct);
-	if (lua_istable(InL, -1))
-	{
-		return true;
-	}
-	else
-	{
-		//pop nil
-		lua_pop(InL, 1);
-	}
-
-	if (FUnrealMisc::HasScriptAccessibleField(InStruct) == false)
-	{
-		return false;
-	}
-
-	lua_newtable(InL);
-	int32 StructIndex = lua_gettop(InL);
-	{
-		lua_pushvalue(InL, StructIndex);
-		lua_rawsetp(InL, InModuleIndex, InStruct);
-	}
-
-	lua_pushstring(InL, "__index");
-	lua_pushvalue(InL, StructIndex);
-	lua_rawset(InL, StructIndex);
-
-	bool bHasSuper = false;
-	if (const UScriptStruct* SuperStruct = Cast<UScriptStruct>(InStruct->GetSuperStruct()))
-	{
-		bHasSuper = RegisterStruct(InL, InModuleIndex, SuperStruct);
-		if (bHasSuper)
-		{
-			//set parent class's table as the metatable for current class's table
-			lua_setmetatable(InL, StructIndex);
-		}
-	}
-
-	for (TFieldIterator<const UField> It(InStruct, EFieldIteratorFlags::ExcludeSuper); It; ++It)
-	{
-		if (const UProperty* Prop = Cast<UProperty>(*It))
-		{
-			RegisterProperty(InL, Prop, true);
-			continue;
-		}
-	}
-
-	return true;
-}
-
-
-bool FLuaUnrealWrapper::RegisterDelegate(lua_State* InL, int32 InModuleIndex)
-{
-	if (lua_istable(InL, InModuleIndex) == false)
-	{
-		return false;
-	}
-
-	lua_pushstring(InL, "__index");
-	lua_pushvalue(InL, InModuleIndex);
-	lua_rawset(InL, InModuleIndex);
+	lua_pushvalue(InL, -1);
+	lua_setfield(InL, -2, "__index");
 
 	lua_pushcfunction(InL, FUnrealMisc::LuaBindDelegate);
-	lua_setfield(InL, InModuleIndex, "Bind");
+	lua_setfield(InL, -2, "Bind");
 
 	lua_pushcfunction(InL, FUnrealMisc::LuaBindDelegate);
-	lua_setfield(InL, InModuleIndex, "Add");
+	lua_setfield(InL, -2, "Add");
 
 
 	lua_pushcfunction(InL, FUnrealMisc::LuaUnbindDelegate);
-	lua_setfield(InL, InModuleIndex, "Unbind");
+	lua_setfield(InL, -2, "Unbind");
 
 	lua_pushcfunction(InL, FUnrealMisc::LuaUnbindDelegate);
-	lua_setfield(InL, InModuleIndex, "Remove");
+	lua_setfield(InL, -2, "Remove");
 
 	lua_pushcfunction(InL, FUnrealMisc::LuaCallUnrealDelegate);
-	lua_setfield(InL, InModuleIndex, "Call");
+	lua_setfield(InL, -2, "Call");
 
 	return true;
 }
@@ -464,8 +264,10 @@ int InitUnrealLib(lua_State* L)
 		{"LuaLoadClass", FUnrealMisc::LuaLoadClass},
 		{"LuaGetUnrealCDO", FUnrealMisc::LuaGetUnrealCDO},
 		{"LuaNewObject", FUnrealMisc::LuaNewObject},
+		{"LuaNewStruct", FUnrealMisc::LuaNewStruct},
 		{"LuaDumpObject", FUnrealMisc::LuaDumpObject},
 		{"LuaAddObjectRef", FUnrealMisc::LuaAddObjectRef},
+		{"RegisterTickFunction", FUnrealMisc::RegisterTickFunction},
 		{nullptr, nullptr}
 	};
 

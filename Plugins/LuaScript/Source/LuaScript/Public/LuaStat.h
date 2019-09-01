@@ -9,8 +9,11 @@
 
 DECLARE_STATS_GROUP(TEXT("LuaScript"), STATGROUP_LuaScript, STATCAT_Advanced);
 
-DECLARE_CYCLE_STAT_EXTERN(TEXT("FindClassMetatable"), STAT_FindClassMetatable, STATGROUP_LuaScript, );
-DECLARE_CYCLE_STAT_EXTERN(TEXT("FindStructMetatable"), STAT_FindStructMetatable, STATGROUP_LuaScript, );
+DECLARE_CYCLE_STAT_EXTERN(TEXT("ObjectIndex"), STAT_ObjectIndex, STATGROUP_LuaScript, );
+DECLARE_CYCLE_STAT_EXTERN(TEXT("ObjectNewIndex"), STAT_ObjectNewIndex, STATGROUP_LuaScript, );
+
+DECLARE_CYCLE_STAT_EXTERN(TEXT("StructIndex"), STAT_StructIndex, STATGROUP_LuaScript, );
+DECLARE_CYCLE_STAT_EXTERN(TEXT("StructNewIndex"), STAT_StructNewIndex, STATGROUP_LuaScript, );
 
 DECLARE_CYCLE_STAT_EXTERN(TEXT("PushToLua"), STAT_PushToLua, STATGROUP_LuaScript, );
 DECLARE_CYCLE_STAT_EXTERN(TEXT("FetchFromLua"), STAT_FetchFromLua, STATGROUP_LuaScript, );

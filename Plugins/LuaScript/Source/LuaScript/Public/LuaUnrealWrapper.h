@@ -27,12 +27,7 @@ public:
 
 	FString DoLuaCode(const FString& InCode);
 
-	//register a UClass to lua
-	bool RegisterClass(lua_State* InL, int32 InModuleIndex, const UClass* InClass);
-	//register a FStruct to lu
-	bool RegisterStruct(lua_State* InL, int32 InModuleIndex, const UScriptStruct* InScriptStruct);
-
-	bool RegisterDelegate(lua_State* InL, int32 InModuleIndex);
+	bool RegisterDelegate(lua_State* InL);
 
 	void RunMainFunction(const FString& InMainFile = FString("ApplicationMain"));
 
@@ -46,9 +41,6 @@ protected:
 	//export all UObject and FStruct to lua state, if InScriptPath is nul, use config path
 	void RegisterUnreal(class UGameInstance* InGameInstance);
 
-	void RegisterProperty(lua_State* InL, const class UProperty* InProperty, bool InIsStruct = false);
-	void RegisterFunction(lua_State* InL, const class UFunction* InFunction, const class UClass* InClass = nullptr);
-
 	lua_State * L = nullptr;
 
 	FTickerDelegate LuaTickerDelegate;
@@ -61,6 +53,9 @@ public:
 	int32 ClassMetatableIdx = 0;
 	int32 StructMetatableIdx = 0;
 	int32 DelegateMetatableIndex = 0;
+
+	int32 LuaTickFunctionIndex = 0;
+
 
 	//lua UE4's delegate proxy object
 	TArray<class UDelegateCallLua*> DelegateCallLuaList;

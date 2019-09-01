@@ -314,26 +314,19 @@ void FUnrealMisc::PushObject(lua_State* InL, UObject* InObj)
 
 		const UClass* Class = InObj->GetClass();
 
-		SCOPE_CYCLE_COUNTER(STAT_FindClassMetatable);
 		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
 		FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(InL, -1);
 		lua_pop(InL, 1);
 		lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->ClassMetatableIdx);
-		lua_rawgetp(InL, -1, Class);
 		if (lua_istable(InL, -1))
 		{
-			lua_setmetatable(InL, -3);
+			lua_setmetatable(InL, -2);
 		}
 		else
 		{
 			lua_pop(InL, 1);
-			if (LuaWrapper->RegisterClass(InL, -1, Class))
-			{
-				lua_setmetatable(InL, -3);
-			}
 		}
 
-		lua_pop(InL, 1);
 	}
 }
 
@@ -357,20 +350,17 @@ void FUnrealMisc::PushStruct(lua_State* InL, const UScriptStruct* InStruct, cons
 
 	InStruct->CopyScriptStruct(&(Wrapper->StructInst), InBuff);
 
-	SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
 	FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(InL, -1);
 	lua_pop(InL, 1);
 	lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->StructMetatableIdx);
-	lua_rawgetp(InL,-1, InStruct);
 	if (lua_istable(InL, -1))
 	{
-		lua_setmetatable(InL, -3);
-		lua_pop(InL, 1);
+		lua_setmetatable(InL, -2);
 	}
 	else
 	{
-		lua_pop(InL, 2);
+		lua_pop(InL, 1);
 	}
 }
 
@@ -457,7 +447,7 @@ int32 FUnrealMisc::CallFunction(lua_State* L)
 		Obj = Wrapper->ObjInst.Get();
 	}
 	int32 StackTop = 2;
-	if (Obj == nullptr)
+	if (Func == nullptr || Obj == nullptr)
 	{
 		lua_pushnil(L);
 		return 1;
@@ -511,6 +501,97 @@ int32 FUnrealMisc::CallFunction(lua_State* L)
 		return ReturnNum;
 	}
 
+}
+
+int32 FUnrealMisc::ObjectIndex(lua_State* InL)
+{
+	SCOPE_CYCLE_COUNTER(STAT_ObjectIndex);
+
+	FLuaObjectWrapper* ObjectWrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
+	const char* FieldName = lua_tostring(InL, 2);
+	if (ObjectWrapper && ObjectWrapper->WrapperType == ELuaUnrealWrapperType::Object)
+	{
+		UFunction* Func = ObjectWrapper->ObjInst->GetClass()->FindFunctionByName(FName(FieldName));
+		UProperty* Prop = Func ? nullptr : ObjectWrapper->ObjInst->GetClass()->FindPropertyByName(FName(FieldName));
+		if (Func)
+		{
+			lua_pushlightuserdata(InL, Func);
+			lua_pushcclosure(InL, FUnrealMisc::CallFunction, 1);
+		}
+		else if (Prop)
+		{
+			PushProperty(InL, Prop, ObjectWrapper->ObjInst.Get(), !Prop->HasAnyPropertyFlags(CPF_BlueprintReadOnly));
+		}
+		else
+		{
+			lua_pushnil(InL);
+		}
+	}
+	else
+	{
+		lua_pushnil(InL);
+	}
+
+	return 1;
+}
+
+int32 FUnrealMisc::ObjectNewIndex(lua_State* InL)
+{
+	SCOPE_CYCLE_COUNTER(STAT_ObjectNewIndex);
+	FLuaObjectWrapper* ObjectWrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
+	const char* FieldName = lua_tostring(InL, 2);
+	if (ObjectWrapper && ObjectWrapper->WrapperType == ELuaUnrealWrapperType::Object)
+	{
+		UProperty* Prop = ObjectWrapper->ObjInst->GetClass()->FindPropertyByName(FName(FieldName));
+		if (Prop)
+		{
+			FUnrealMisc::FetchProperty(InL, Prop, ObjectWrapper->ObjInst.Get(), 3);
+		}
+	}
+
+	return 0;
+}
+
+int32 FUnrealMisc::StructIndex(lua_State* InL)
+{
+	SCOPE_CYCLE_COUNTER(STAT_StructIndex);
+	FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_touserdata(InL, 1);
+	const char* FieldName = lua_tostring(InL, 2);
+	if (StructWrapper && StructWrapper->WrapperType == ELuaUnrealWrapperType::Struct)
+	{
+		UProperty* Prop = StructWrapper->StructType->FindPropertyByName(FName(FieldName));
+		if (Prop)
+		{
+			FUnrealMisc::PushProperty(InL, Prop, &(StructWrapper->StructInst));
+		}
+		else
+		{
+			lua_pushnil(InL);
+		}
+	}
+	else
+	{
+		lua_pushnil(InL);
+	}
+
+	return 1;
+}
+
+int32 FUnrealMisc::StructNewIndex(lua_State* InL)
+{
+	SCOPE_CYCLE_COUNTER(STAT_StructNewIndex);
+	FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_touserdata(InL, 1);
+	const char* FieldName = lua_tostring(InL, 2);
+	if (StructWrapper && StructWrapper->WrapperType == ELuaUnrealWrapperType::Struct)
+	{
+		UProperty* Prop = StructWrapper->StructType->FindPropertyByName(FName(FieldName));
+		if (Prop)
+		{
+			FetchProperty(InL, Prop, &(StructWrapper->StructInst), 3);
+		}
+	}
+
+	return 0;
 }
 
 void* FUnrealMisc::LuaAlloc(void* ud, void* ptr, size_t osize, size_t nsize)
@@ -788,6 +869,46 @@ int FUnrealMisc::LuaNewObject(lua_State* InL)
 }
 
 
+int FUnrealMisc::LuaNewStruct(lua_State* InL)
+{
+	int ParamNum = lua_gettop(InL);
+	if (ParamNum < 1)
+	{
+		//error
+		return 0;
+	}
+
+
+	UScriptStruct* StructType = FindObject<UScriptStruct>(ANY_PACKAGE, UTF8_TO_TCHAR(lua_tostring(InL, 1)));
+	if (StructType == nullptr)
+	{
+		lua_pushnil(InL);
+		return 1;
+	}
+	else
+	{
+		FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper) + StructType->GetStructureSize());
+		StructWrapper->WrapperType = ELuaUnrealWrapperType::Struct;
+		StructWrapper->StructType = StructType;
+		StructType->InitializeDefaultValue((uint8*)&(StructWrapper->StructInst));
+
+		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+		FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(InL, -1);
+		lua_pop(InL, 1);
+		lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->StructMetatableIdx);
+		if (lua_istable(InL, -1))
+		{
+			lua_setmetatable(InL, -2);
+		}
+		else
+		{
+			lua_pop(InL, 1);
+		}
+	}
+
+	return 1;
+}
+
 //Lua usage: GameSingleton:GetGameEvent():GetOnPostLoadMap():Call(0)
 int FUnrealMisc::LuaCallUnrealDelegate(lua_State* InL)
 {
@@ -924,6 +1045,33 @@ int FUnrealMisc::LuaAddObjectRef(lua_State* InL)
 	lua_pushinteger(InL, NewNum);
 	return 1;
 
+}
+
+int32 FUnrealMisc::RegisterTickFunction(lua_State* InL)
+{
+	if (lua_isfunction(InL, 1))
+	{
+		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+		FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(InL, -1);
+		lua_pop(InL, 1);
+
+		LuaWrapper->LuaTickFunctionIndex = luaL_ref(InL, LUA_REGISTRYINDEX);
+	}
+	else
+	{
+		bool bUnRegister = !lua_toboolean(InL, 1);
+		if (bUnRegister)
+		{
+			lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+			FLuaUnrealWrapper* LuaWrapper = (FLuaUnrealWrapper*)lua_touserdata(InL, -1);
+			lua_pop(InL, 1);
+
+			luaL_unref(InL, LUA_REGISTRYINDEX, LuaWrapper->LuaTickFunctionIndex);
+			LuaWrapper->LuaTickFunctionIndex = 0;
+		}
+	}
+
+	return 0;
 }
 
 int FUnrealMisc::PrintLog(lua_State* L)

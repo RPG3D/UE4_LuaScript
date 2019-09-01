@@ -70,6 +70,12 @@ public:
 
 	static int32 CallFunction(lua_State* L);
 
+	static int32 ObjectIndex(lua_State* InL);
+	static int32 ObjectNewIndex(lua_State* InL);
+
+	static int32 StructIndex(lua_State* InL);
+	static int32 StructNewIndex(lua_State* InL);
+
 	static void* LuaAlloc(void* ud, void* ptr, size_t osize, size_t nsize);
 
 	//0 log  1 warning 2 error
@@ -83,9 +89,12 @@ public:
 	static int LuaBindDelegate(lua_State* InL);
 	static int LuaUnbindDelegate(lua_State* InL);
 	static int LuaNewObject(lua_State* InL);
+	static int LuaNewStruct(lua_State* InL);
 	static int LuaCallUnrealDelegate(lua_State* InL);
 	static int LuaDumpObject(lua_State* InL);
 	static int LuaAddObjectRef(lua_State* InL);
+
+	static int32 RegisterTickFunction(lua_State* InL);
 
 	static int PrintLog(lua_State* L);
 };

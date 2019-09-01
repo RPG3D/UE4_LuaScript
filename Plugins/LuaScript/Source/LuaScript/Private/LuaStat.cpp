@@ -3,8 +3,13 @@
 
 #include "LuaStat.h"
 
-DEFINE_STAT(STAT_FindClassMetatable);
-DEFINE_STAT(STAT_FindStructMetatable);
+
+DEFINE_STAT(STAT_ObjectIndex);
+DEFINE_STAT(STAT_ObjectNewIndex);
+
+DEFINE_STAT(STAT_StructIndex);
+DEFINE_STAT(STAT_StructNewIndex);
+
 DEFINE_STAT(STAT_PushToLua);
 DEFINE_STAT(STAT_FetchFromLua);
 DEFINE_STAT(STAT_LuaCallBP);
