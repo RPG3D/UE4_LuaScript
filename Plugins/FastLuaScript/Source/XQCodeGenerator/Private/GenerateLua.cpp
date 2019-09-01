@@ -893,11 +893,9 @@ FString GenerateLua::GenerateFetchPropertyStr(const UProperty* InProp, const FSt
 		FuncName.FindChar('_', SplitIndex);
 		FString DelegateName = FuncName.Left(SplitIndex);
 
-		FString ScopePrefix = DelegateProp->SignatureFunction->GetOuter()->GetClass()->GetPrefixCPP() + DelegateProp->SignatureFunction->GetOuter()->GetName() + FString("::");
-		if (ScopePrefix.Contains(FString("/")))
-		{
-			ScopePrefix = FString("");
-		}
+		UObject* Outer = DelegateProp->SignatureFunction->GetOuter();
+		UClass* OuterClass = Cast<UClass>(Outer);
+		FString ScopePrefix = OuterClass ? (OuterClass->GetPrefixCPP() + Outer->GetName() + FString("::")) : FString("");
 
 		BodyStr = FString::Printf(TEXT("FLuaDelegateWrapper* %s_Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, %d); \n\t%sF%s& %s = *(%sF%s*)%s_Wrapper->DelegateInst;"), *InParamName, InStackIndex, *ScopePrefix, *DelegateName, *InParamName, *ScopePrefix, *DelegateName, *InParamName);
 	}
@@ -908,11 +906,9 @@ FString GenerateLua::GenerateFetchPropertyStr(const UProperty* InProp, const FSt
 		FuncName.FindChar('_', SplitIndex);
 		FString DelegateName = FuncName.Left(SplitIndex);
 
-		FString ScopePrefix = MultiDelegateProp->SignatureFunction->GetOuter()->GetClass()->GetPrefixCPP() + MultiDelegateProp->SignatureFunction->GetOuter()->GetName() + FString("::");
-		if (ScopePrefix.Contains(FString("/")))
-		{
-			ScopePrefix = FString("");
-		}
+		UObject* Outer = MultiDelegateProp->SignatureFunction->GetOuter();
+		UClass* OuterClass = Cast<UClass>(Outer);
+		FString ScopePrefix = OuterClass ? (OuterClass->GetPrefixCPP() + Outer->GetName() + FString("::")) : FString("");
 
 		BodyStr = FString::Printf(TEXT("FLuaDelegateWrapper* %s_Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, %d); \n\t%sF%s& %s = *(%sF%s*)%s_Wrapper->DelegateInst;"), *InParamName, InStackIndex, *ScopePrefix, *DelegateName, *InParamName, *ScopePrefix, *DelegateName, *InParamName);
 	}
