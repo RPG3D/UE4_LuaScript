@@ -349,7 +349,7 @@ void FastLuaHelper::FetchProperty(lua_State* InL, const UProperty* InProp, void*
 	}
 	else if (const UStructProperty * StructProp = Cast<UStructProperty>(InProp))
 	{
-		void* Data = FetchStruct(InL, InStackIndex);
+		void* Data = FetchStruct(InL, InStackIndex, StructProp->Struct->GetStructureSize());
 		if (Data)
 		{
 			StructProp->Struct->CopyScriptStruct(InBuff, Data);
@@ -464,9 +464,9 @@ void FastLuaHelper::PushObject(lua_State* InL, UObject* InObj)
 		Wrapper->WrapperType = ELuaUnrealWrapperType::Object;
 		Wrapper->ObjInst = InObj;
 
-		UClass* Class = InObj->GetClass();
-
 		SCOPE_CYCLE_COUNTER(STAT_FindClassMetatable);
+
+		UClass* Class = InObj->GetClass();
 		while (Class)
 		{
 			lua_rawgetp(InL, LUA_REGISTRYINDEX, Class);
@@ -484,10 +484,10 @@ void FastLuaHelper::PushObject(lua_State* InL, UObject* InObj)
 	}
 }
 
-void* FastLuaHelper::FetchStruct(lua_State* InL, int32 InIndex)
+void* FastLuaHelper::FetchStruct(lua_State* InL, int32 InIndex, int32 InDesiredSize)
 {
 	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, InIndex);
-	if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Struct)
+	if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Struct && Wrapper->StructType->GetStructureSize() >= InDesiredSize)
 	{
 		return &(Wrapper->StructInst);
 	}
@@ -497,38 +497,67 @@ void* FastLuaHelper::FetchStruct(lua_State* InL, int32 InIndex)
 
 void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, const void* InBuff)
 {
+	if (InStruct == nullptr || InBuff == nullptr)
+	{
+		lua_pushnil(InL);
+		return;
+	}
+
 	const int32 StructSize = FMath::Max(InStruct->GetStructureSize(), 1);
 	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper) + StructSize);
 	Wrapper->WrapperType = ELuaUnrealWrapperType::Struct;
 	Wrapper->StructType = InStruct;
+	Wrapper->StructInst = nullptr;
 
 	InStruct->CopyScriptStruct(&(Wrapper->StructInst), InBuff);
 
 	SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
-	lua_rawgetp(InL, LUA_REGISTRYINDEX, InStruct);
-	if (lua_istable(InL, -1))
+
+	const UScriptStruct* StructType = InStruct;
+	while (StructType)
 	{
-		lua_setmetatable(InL, -2);
-	}
-	else
-	{
-		lua_pop(InL, 1);
+		lua_rawgetp(InL, LUA_REGISTRYINDEX, StructType);
+		if (lua_istable(InL, -1))
+		{
+			lua_setmetatable(InL, -2);
+			break;
+		}
+		else
+		{
+			lua_pop(InL, 1);
+		}
+		StructType = Cast<UScriptStruct>(StructType->GetSuperStruct());
 	}
 }
 
-void FastLuaHelper::PushDelegate(lua_State* InL, void* InDelegateProperty, void* InBuff, bool InMulti)
+void FastLuaHelper::PushDelegate(lua_State* InL, UProperty* InDelegateProperty, void* InBuff, bool InMulti)
 {
+	if (InDelegateProperty == nullptr || InBuff == nullptr)
+	{
+		lua_pushnil(InL);
+		return;
+	}
 	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
 	Wrapper->WrapperType = ELuaUnrealWrapperType::Delegate;
 	Wrapper->bIsMulti = InMulti;
 	Wrapper->DelegateInst = InMulti ? (void*)((UMulticastDelegateProperty*)InDelegateProperty)->ContainerPtrToValuePtr<FMulticastScriptDelegate>(InBuff) : (void*)((UDelegateProperty*)InDelegateProperty)->GetPropertyValuePtr_InContainer(InBuff);
 	Wrapper->FunctionSignature = InMulti ? ((UMulticastDelegateProperty*)InDelegateProperty)->SignatureFunction : ((UDelegateProperty*)InDelegateProperty)->SignatureFunction;
-	
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
 	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
 	lua_pop(InL, 1);
 	lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->GetDelegateMetatableIndex());
 	lua_setmetatable(InL, -2);
+}
+
+void* FastLuaHelper::FetchDelegate(lua_State* InL, int32 InIndex)
+{
+	FLuaDelegateWrapper* DelegateWrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, InIndex);
+	if (DelegateWrapper && DelegateWrapper->WrapperType == ELuaUnrealWrapperType::Delegate)
+	{
+		return DelegateWrapper->DelegateInst;
+	}
+	
+	return nullptr;
 }
 
 int32 FastLuaHelper::CallFunction(lua_State* L)
@@ -834,16 +863,25 @@ int FastLuaHelper::LuaNewStruct(lua_State* InL)
 		FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper) + StructClass->GetStructureSize());
 		StructWrapper->StructType = StructClass;
 		StructWrapper->WrapperType = ELuaUnrealWrapperType::Struct;
+		StructWrapper->StructInst = nullptr;
 		StructClass->InitializeDefaultValue((uint8*)(&StructWrapper->StructInst));
 
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, StructClass);
-		if (lua_istable(InL, -1))
+		SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
+
+		const UScriptStruct* StructType = StructClass;
+		while (StructType)
 		{
-			lua_setmetatable(InL, -2);
-		}
-		else
-		{
-			lua_pop(InL, 1);
+			lua_rawgetp(InL, LUA_REGISTRYINDEX, StructType);
+			if (lua_istable(InL, -1))
+			{
+				lua_setmetatable(InL, -2);
+				break;
+			}
+			else
+			{
+				lua_pop(InL, 1);
+			}
+			StructType = Cast<UScriptStruct>(StructType->GetSuperStruct());
 		}
 	}
 	return 1;
@@ -971,7 +1009,6 @@ int FastLuaHelper::LuaBindDelegate(lua_State* InL)
 		return 1;
 	}
 
-	//FString WrapperObjectName = ;
 	UFastLuaDelegate* DelegateObject = NewObject<UFastLuaDelegate>(GetTransientPackage(), FName(lua_tostring(InL, 4)));
 	//ref function
 	lua_pushvalue(InL, 2);

@@ -39,9 +39,9 @@ struct FLuaDelegateWrapper
 public:
 	ELuaUnrealWrapperType WrapperType = ELuaUnrealWrapperType::Delegate;
 	//FMulticastScriptDelegate(Multi) or FScriptDelegate
-	void* DelegateInst = nullptr;
 	bool bIsMulti = false;
 	class UFunction* FunctionSignature = nullptr;
+	void* DelegateInst = nullptr;
 };
 
 struct FLuaSoftClassWrapper
@@ -87,10 +87,11 @@ public:
 	static UObject* FetchObject(lua_State* InL, int32 InIndex);
 	static void PushObject(lua_State* InL, UObject* InObj);
 
-	static void* FetchStruct(lua_State* InL, int32 InIndex);
+	static void* FetchStruct(lua_State* InL, int32 InIndex, int32 InDesiredSize);
 	static void PushStruct(lua_State* InL, const UScriptStruct* InStruct, const void* InBuff);
 
-	static void PushDelegate(lua_State* InL, void* InDelegateProperty, void* InBuff, bool InMulti);
+	static void PushDelegate(lua_State* InL, class UProperty* InDelegateProperty, void* InBuff, bool InMulti);
+	static void* FetchDelegate(lua_State* InL, int32 InIndex);
 
 	static int32 CallFunction(lua_State* L);
 

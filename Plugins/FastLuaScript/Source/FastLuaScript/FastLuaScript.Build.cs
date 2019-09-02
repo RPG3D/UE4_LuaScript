@@ -38,6 +38,7 @@ public class FastLuaScript : ModuleRules
                 "Engine",
                 "UMG",
                 "InputCore",
+                "ClothingSystemRuntimeInterface",
 				// ... add other public dependencies that you statically link with here ...
                 "LuaSource"
             }

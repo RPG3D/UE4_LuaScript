@@ -3,5 +3,5 @@ CoreUObject
 Engine
 UMG
 Slate
-ClassicRPG
+UE4_LuaScript
 FastLuaScript

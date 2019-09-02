@@ -15,58 +15,55 @@ Timer = Timer or require('Timer')
 
 GTimer = Timer:new('GTimer')
 
+UEMath = UEMath or require('UEMath')
+
 MainTable = MainTable or {}
 
 function MainTable.Tick(InDeltaTime)
 	GTimer:Tick(InDeltaTime)
 end
 
-function MainTable.UnbindEvent()
-	
+function MainTable:HandleUIEvent(InParam)
+	print('OnUIEvent' .. InParam:GetX())
 
+	--G_GameInstance:SetOnUIEvent(MainTable.d)
 end
 
-
-function MainTable:HandleUIEvent(InParam)
-	print('OnUIEvent')
-
-	print(InParam:GetX(), InParam:GetY())
+function MainTable.CustomHandle(InParam)
+	print('CustomHandle')
 	
-	--G_GameInstance:GetOnUIEvent():Unbind(MainTable.DelegateObj)
-	--MainTable.DelegateObj:Unbind(MainTable.DelegateObj)
 end
 
 function MainTable.PostInit()
 	print('PostInit')
 	
-	local PlayerCtrl = GameplayStatics:GetPlayerController(G_GameInstance, 0)
+	MainTable.PlayerCtrl = GameplayStatics:GetPlayerController(G_GameInstance, 0)
 	
 	local UIClass = Unreal.LuaLoadClass(G_GameInstance, '/Game/MainUI.MainUI_C')
 	
-	MainTable.UIInst = WidgetBlueprintLibrary:Create(G_GameInstance, UIClass, PlayerCtrl)
+	MainTable.UIInst = WidgetBlueprintLibrary:Create(G_GameInstance, UIClass, MainTable.PlayerCtrl)
 	MainTable.UIInst:AddToViewport(0)
-	
-	PlayerCtrl:SetbShowMouseCursor(true)
-	
+	MainTable.PlayerCtrl:SetbShowMouseCursor(true)
 	MainTable.DelegateObj = G_GameInstance:GetOnUIEvent():Bind(MainTable.HandleUIEvent, MainTable)
+
+	G_GameInstance:SetOnUIEvent(G_GameInstance:GetOnUIEvent())
 end
 
 function Main()
 
-
 	print(("----------Lua Ram: %.2fMB----------"):format(collectgarbage("count") / 1024))
 	
 	Unreal.RegisterTickFunction(MainTable.Tick)
-	
 	G_GameInstance = Unreal.LuaGetGameInstance()
 
 	GTimer:SetTimer('PostInit', 2, 1, MainTable.PostInit, nil)
-	
-	local color = KismetMathLibrary:MakeColor(0.4, 0.2, 0.7, 1.0)
-	local r, g, b, a = KismetMathLibrary:BreakColor(color)
-	
-	print(r, g, b, a)
 
+	local t = 'OnUIEvent__DelegateSignature'
+	--MainTable.d = Unreal.LuaNewDelegate(t, "TestInstance")
+	
+	--MainTable.q = Unreal.LuaNewDelegate('OnButtonClickedEvent__DelegateSignature')
+	
+	--MainTable.d:Bind(MainTable.CustomHandle)
 end
 
 
