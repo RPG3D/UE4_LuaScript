@@ -540,6 +540,7 @@ void FastLuaHelper::PushDelegate(lua_State* InL, UProperty* InDelegateProperty, 
 	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
 	Wrapper->WrapperType = ELuaUnrealWrapperType::Delegate;
 	Wrapper->bIsMulti = InMulti;
+	Wrapper->bIsUserDefined = false;
 	Wrapper->DelegateInst = InMulti ? (void*)((UMulticastDelegateProperty*)InDelegateProperty)->ContainerPtrToValuePtr<FMulticastScriptDelegate>(InBuff) : (void*)((UDelegateProperty*)InDelegateProperty)->GetPropertyValuePtr_InContainer(InBuff);
 	Wrapper->FunctionSignature = InMulti ? ((UMulticastDelegateProperty*)InDelegateProperty)->SignatureFunction : ((UDelegateProperty*)InDelegateProperty)->SignatureFunction;
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
@@ -549,10 +550,10 @@ void FastLuaHelper::PushDelegate(lua_State* InL, UProperty* InDelegateProperty, 
 	lua_setmetatable(InL, -2);
 }
 
-void* FastLuaHelper::FetchDelegate(lua_State* InL, int32 InIndex)
+void* FastLuaHelper::FetchDelegate(lua_State* InL, int32 InIndex, bool InIsMulti)
 {
 	FLuaDelegateWrapper* DelegateWrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, InIndex);
-	if (DelegateWrapper && DelegateWrapper->WrapperType == ELuaUnrealWrapperType::Delegate)
+	if (DelegateWrapper && DelegateWrapper->WrapperType == ELuaUnrealWrapperType::Delegate && DelegateWrapper->bIsMulti == InIsMulti)
 	{
 		return DelegateWrapper->DelegateInst;
 	}
@@ -992,6 +993,34 @@ int FastLuaHelper::PrintLog(lua_State* L)
 	return 0;
 }
 
+int FastLuaHelper::LuaNewDelegate(lua_State* InL)
+{
+	FString FuncName = UTF8_TO_TCHAR(lua_tostring(InL, 1)) + FString("__DelegateSignature");
+	FString ScopeName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
+	bool bIsMulti = (bool)lua_toboolean(InL, 3);
+	UFunction* Func = FindObject<UFunction>(ANY_PACKAGE, *FuncName);
+	if (Func == nullptr || (ScopeName.Len() > 1 && ScopeName != Func->GetOuter()->GetName()))
+	{
+		lua_pushnil(InL);
+		return 1;
+	}
+
+	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
+	Wrapper->WrapperType = ELuaUnrealWrapperType::Delegate;
+	Wrapper->bIsMulti = bIsMulti;
+	Wrapper->DelegateInst = bIsMulti ? (void*)(new FMulticastScriptDelegate()) : (void*)(new FScriptDelegate());
+	Wrapper->bIsUserDefined = true;
+	Wrapper->FunctionSignature = Func;
+
+	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
+	lua_pop(InL, 1);
+	lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->GetDelegateMetatableIndex());
+	lua_setmetatable(InL, -2);
+
+	return 1;
+}
+
 //Lua usage: LoadMapEndedEvent:Bind(LuaFunction, LuaObj, InWrapperObjectName[option])
 int FastLuaHelper::LuaBindDelegate(lua_State* InL)
 {
@@ -1141,4 +1170,20 @@ int FastLuaHelper::RegisterTickFunction(lua_State* InL)
 
 	lua_pushboolean(InL, true);
 	return 1;
+}
+
+int FastLuaHelper::UserDelegateGC(lua_State* InL)
+{
+	FLuaDelegateWrapper* DelegateWrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, -1);
+
+	if (DelegateWrapper && DelegateWrapper->WrapperType == ELuaUnrealWrapperType::Delegate)
+	{
+		if (DelegateWrapper->bIsUserDefined)
+		{
+			delete DelegateWrapper->DelegateInst;
+			DelegateWrapper->DelegateInst = nullptr;
+		}
+	}
+
+	return 0;
 }

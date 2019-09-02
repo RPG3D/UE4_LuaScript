@@ -22,6 +22,7 @@ static int InitUnrealLib(lua_State* L)
 		{"LuaGetUnrealCDO", FastLuaHelper::LuaGetUnrealCDO},
 		{"LuaNewObject", FastLuaHelper::LuaNewObject},
 		{"LuaNewStruct", FastLuaHelper::LuaNewStruct},
+		{"LuaNewDelegate", FastLuaHelper::LuaNewDelegate},
 		{"RegisterTickFunction", FastLuaHelper::RegisterTickFunction},
 		{nullptr, nullptr}
 	};
@@ -132,6 +133,9 @@ void FastLuaUnrealWrapper::InitDelegateMetatable()
 	luaL_newlib(GetLuaSate(), DelegateFuncs);
 	lua_pushvalue(GetLuaSate(), -1);
 	lua_setfield(GetLuaSate(), -2, "__index");
+
+	lua_pushcfunction(GetLuaSate(), FastLuaHelper::UserDelegateGC);
+	lua_setfield(GetLuaSate(), -2, "__gc");
 
 	DelegateMetatableIndex = luaL_ref(GetLuaSate(), LUA_REGISTRYINDEX);
 }

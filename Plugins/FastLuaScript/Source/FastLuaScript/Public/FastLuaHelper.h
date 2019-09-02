@@ -12,8 +12,6 @@ enum class ELuaUnrealWrapperType
 	Object = 2019,
 	Struct = 2020,
 	Delegate = 2021,
-	SoftClass,
-	SoftObject,
 	Interface
 };
 
@@ -40,23 +38,11 @@ public:
 	ELuaUnrealWrapperType WrapperType = ELuaUnrealWrapperType::Delegate;
 	//FMulticastScriptDelegate(Multi) or FScriptDelegate
 	bool bIsMulti = false;
+	bool bIsUserDefined = false;
 	class UFunction* FunctionSignature = nullptr;
 	void* DelegateInst = nullptr;
 };
 
-struct FLuaSoftClassWrapper
-{
-public:
-	ELuaUnrealWrapperType WrapperType = ELuaUnrealWrapperType::SoftClass;
-	TSoftClassPtr<UObject> SoftClassInst = nullptr;
-};
-
-struct FLuaSoftObjectWrapper
-{
-public:
-	ELuaUnrealWrapperType WrapperType = ELuaUnrealWrapperType::SoftObject;
-	TSoftObjectPtr<UObject> SoftObjInst = nullptr;
-};
 
 struct FLuaInterfaceWrapper
 {
@@ -91,7 +77,7 @@ public:
 	static void PushStruct(lua_State* InL, const UScriptStruct* InStruct, const void* InBuff);
 
 	static void PushDelegate(lua_State* InL, class UProperty* InDelegateProperty, void* InBuff, bool InMulti);
-	static void* FetchDelegate(lua_State* InL, int32 InIndex);
+	static void* FetchDelegate(lua_State* InL, int32 InIndex, bool InIsMulti = true);
 
 	static int32 CallFunction(lua_State* L);
 
@@ -112,8 +98,11 @@ public:
 	static int LuaCallUnrealDelegate(lua_State* InL);
 	static int PrintLog(lua_State* L);
 
+	static int LuaNewDelegate(lua_State* InL);
 	static int LuaBindDelegate(lua_State* InL);
 	static int LuaUnbindDelegate(lua_State* InL);
 
 	static int RegisterTickFunction(lua_State* InL);
+
+	static int UserDelegateGC(lua_State* InL);
 };

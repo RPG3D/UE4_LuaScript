@@ -868,12 +868,12 @@ FString GenerateLua::GenerateFetchPropertyStr(const UProperty* InProp, const FSt
 	else if (const USoftClassProperty* SoftClassProp = Cast<USoftClassProperty>(InProp))
 	{
 		FString MetaClassName = SoftClassProp->MetaClass->GetName();
-		BodyStr = FString::Printf(TEXT("FLuaSoftClassWrapper* %s_Wrapper = (FLuaSoftClassWrapper*)lua_touserdata(InL, %d); \n\tTSoftClassPtr<U%s> %s = %s_Wrapper ? (TSoftClassPtr<U%s>)%s_Wrapper->SoftClassInst : nullptr;"), *InParamName, InStackIndex, *MetaClassName, *InParamName, *InParamName, *MetaClassName, *InParamName);
+		BodyStr = FString::Printf(TEXT("FString %s_Path = UTF8_TO_TCHAR(lua_tostring(InL, %d)); \n\tTSoftClassPtr<U%s> %s(%s_Path);"), *InParamName, InStackIndex, *MetaClassName, *InParamName, *InParamName);
 	}
 	else if (const USoftObjectProperty* SoftObjectProp = Cast<USoftObjectProperty>(InProp))
 	{
 		FString MetaClassName = SoftObjectProp->PropertyClass->GetName();
-		BodyStr = FString::Printf(TEXT("FLuaSoftObjectWrapper* %s_Wrapper = (FLuaSoftObjectWrapper*)lua_touserdata(InL, %d); \n\tTSoftObjectPtr<U%s> %s = *(TSoftObjectPtr<U%s>*)&%s_Wrapper->SoftObjInst;"), *InParamName, InStackIndex, *MetaClassName, *InParamName, *MetaClassName, *InParamName);
+		BodyStr = FString::Printf(TEXT("FString %s_Path = UTF8_TO_TCHAR(lua_tostring(InL, %d)); \n\tTSoftObjectPtr<U%s> %s(%s_Path);"), *InParamName, InStackIndex, *MetaClassName, *InParamName, *InParamName);
 	}
 	else if (const UWeakObjectProperty* WeakObjectProp = Cast<UWeakObjectProperty>(InProp))
 	{
@@ -898,7 +898,7 @@ FString GenerateLua::GenerateFetchPropertyStr(const UProperty* InProp, const FSt
 		UClass* OuterClass = Cast<UClass>(Outer);
 		FString ScopePrefix = OuterClass ? (OuterClass->GetPrefixCPP() + Outer->GetName() + FString("::")) : FString("");
 
-		BodyStr = FString::Printf(TEXT("%sF%s %s_Fallback;  \n\tvoid* %s_Pointer = FastLuaHelper::FetchDelegate(InL, %d); \n\t%sF%s& %s = %s_Pointer ? *(%sF%s*)%s_Pointer : %s_Fallback;"),
+		BodyStr = FString::Printf(TEXT("%sF%s %s_Fallback;  \n\tvoid* %s_Pointer = FastLuaHelper::FetchDelegate(InL, %d, false); \n\t%sF%s& %s = %s_Pointer ? *(%sF%s*)%s_Pointer : %s_Fallback;"),
 			*ScopePrefix, *DelegateName, *InParamName, *InParamName, InStackIndex, *ScopePrefix, *DelegateName, *InParamName, *InParamName, *ScopePrefix, *DelegateName, *InParamName, *InParamName);
 	}
 	else if (const UMulticastDelegateProperty* MultiDelegateProp = Cast<UMulticastDelegateProperty>(InProp))
@@ -912,7 +912,7 @@ FString GenerateLua::GenerateFetchPropertyStr(const UProperty* InProp, const FSt
 		UClass* OuterClass = Cast<UClass>(Outer);
 		FString ScopePrefix = OuterClass ? (OuterClass->GetPrefixCPP() + Outer->GetName() + FString("::")) : FString("");
 
-		BodyStr = FString::Printf(TEXT("%sF%s %s_Fallback;  \n\tvoid* %s_Pointer = FastLuaHelper::FetchDelegate(InL, %d); \n\t%sF%s& %s = %s_Pointer ? *(%sF%s*)%s_Pointer : %s_Fallback;"),
+		BodyStr = FString::Printf(TEXT("%sF%s %s_Fallback;  \n\tvoid* %s_Pointer = FastLuaHelper::FetchDelegate(InL, %d, true); \n\t%sF%s& %s = %s_Pointer ? *(%sF%s*)%s_Pointer : %s_Fallback;"),
 			*ScopePrefix, *DelegateName, *InParamName, *InParamName, InStackIndex, *ScopePrefix, *DelegateName, *InParamName, *InParamName, *ScopePrefix, *DelegateName, *InParamName, *InParamName);
 	}
 	else if (const UArrayProperty* ArrayProp = Cast<UArrayProperty>(InProp))

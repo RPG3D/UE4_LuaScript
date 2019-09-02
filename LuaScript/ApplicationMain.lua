@@ -23,14 +23,18 @@ function MainTable.Tick(InDeltaTime)
 	GTimer:Tick(InDeltaTime)
 end
 
-function MainTable:HandleUIEvent(InParam)
-	print('OnUIEvent' .. InParam:GetX())
-
-	--G_GameInstance:SetOnUIEvent(MainTable.d)
+cnt = 0
+function MainTable.OnClicked(InParam)
+	print(InParam:GetX())
+	cnt = cnt + 1
+	if cnt == 3 then
+		G_GameInstance:SetOnUIEvent(MainTable.d)
+	end
 end
 
 function MainTable.CustomHandle(InParam)
 	print('CustomHandle')
+	print(InParam:GetY())
 	
 end
 
@@ -44,9 +48,9 @@ function MainTable.PostInit()
 	MainTable.UIInst = WidgetBlueprintLibrary:Create(G_GameInstance, UIClass, MainTable.PlayerCtrl)
 	MainTable.UIInst:AddToViewport(0)
 	MainTable.PlayerCtrl:SetbShowMouseCursor(true)
-	MainTable.DelegateObj = G_GameInstance:GetOnUIEvent():Bind(MainTable.HandleUIEvent, MainTable)
+	
+	G_GameInstance:GetOnUIEvent():Bind(MainTable.OnClicked)
 
-	G_GameInstance:SetOnUIEvent(G_GameInstance:GetOnUIEvent())
 end
 
 function Main()
@@ -58,12 +62,8 @@ function Main()
 
 	GTimer:SetTimer('PostInit', 2, 1, MainTable.PostInit, nil)
 
-	local t = 'OnUIEvent__DelegateSignature'
-	--MainTable.d = Unreal.LuaNewDelegate(t, "TestInstance")
-	
-	--MainTable.q = Unreal.LuaNewDelegate('OnButtonClickedEvent__DelegateSignature')
-	
-	--MainTable.d:Bind(MainTable.CustomHandle)
+	MainTable.d = Unreal.LuaNewDelegate('OnUIEvent', "TestInstance", true)
+	MainTable.d:Bind(MainTable.CustomHandle)
 end
 
 
