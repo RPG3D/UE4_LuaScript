@@ -34,7 +34,7 @@ public:
 	void* DelegateInst = nullptr;
 
 	//the UFunction bound to this Delegate
-	UFunction* FunctionSignature = nullptr;
+	const UFunction* FunctionSignature = nullptr;
 
 	UFUNCTION()
 		void TestFunction() {}

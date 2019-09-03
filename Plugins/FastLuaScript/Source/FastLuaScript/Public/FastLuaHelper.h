@@ -105,4 +105,14 @@ public:
 	static int RegisterTickFunction(lua_State* InL);
 
 	static int UserDelegateGC(lua_State* InL);
+
+	static int32 ObjectIndex(lua_State* InL);
+
+	static int32 StructIndex(lua_State* InL);
+
+	static int32 GetObjectProperty(lua_State* L);
+	static int32 SetObjectProperty(lua_State* L);
+
+	static int32 GetStructProperty(lua_State* InL);
+	static int32 SetStructProperty(lua_State* InL);
 };

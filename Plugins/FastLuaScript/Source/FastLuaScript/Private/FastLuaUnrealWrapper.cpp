@@ -12,7 +12,13 @@
 #include "FastLuaStat.h"
 
 
-static int InitUnrealLib(lua_State* L)
+static int StopNewIndex(lua_State* InL)
+{
+	UE_LOG(LogTemp, Warning, TEXT("The lua table _G['Unreal'] is read only!"));
+	return 0;
+}
+
+static int InitUnrealLib(lua_State* InL)
 {
 	const static luaL_Reg funcs[] =
 	{
@@ -27,7 +33,16 @@ static int InitUnrealLib(lua_State* L)
 		{nullptr, nullptr}
 	};
 
-	luaL_newlib(L, funcs);
+	luaL_newlib(InL, funcs);
+	{
+		lua_newtable(InL);
+		{
+			lua_pushcfunction(InL, StopNewIndex);
+			lua_setfield(InL, -2, "__newindex");
+		}
+
+		lua_setmetatable(InL, -2);
+	}
 
 	return 1;
 }
@@ -118,15 +133,13 @@ static int RequireFromUFS(lua_State* InL)
 }
 
 
-
-
-
 void FastLuaUnrealWrapper::InitDelegateMetatable()
 {
 	static const luaL_Reg DelegateFuncs[] =
 	{
 		{"Bind", FastLuaHelper::LuaBindDelegate},
 		{"Unbind", FastLuaHelper::LuaUnbindDelegate},
+		{"Call", FastLuaHelper::LuaCallUnrealDelegate},
 		{nullptr, nullptr},
 	};
 
@@ -138,6 +151,32 @@ void FastLuaUnrealWrapper::InitDelegateMetatable()
 	lua_setfield(GetLuaSate(), -2, "__gc");
 
 	DelegateMetatableIndex = luaL_ref(GetLuaSate(), LUA_REGISTRYINDEX);
+}
+
+void FastLuaUnrealWrapper::InitRuntimeClassMetatable()
+{
+	lua_newtable(L);
+	{
+		lua_pushvalue(L, -1);
+		ClassMetatableIndex = luaL_ref(L, LUA_REGISTRYINDEX);
+
+		lua_pushcfunction(L, FastLuaHelper::ObjectIndex);
+		lua_setfield(L, -2, "__index");
+
+	}
+}
+
+void FastLuaUnrealWrapper::InitRuntimeStructMetatble()
+{
+	lua_newtable(L);
+	{
+		lua_pushvalue(L, -1);
+		StructMetatableIndex = luaL_ref(L, LUA_REGISTRYINDEX);
+
+		lua_pushcfunction(L, FastLuaHelper::StructIndex);
+		lua_setfield(L, -2, "__index");
+
+	}
 }
 
 FastLuaUnrealWrapper::FastLuaUnrealWrapper()
@@ -184,6 +223,8 @@ void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 	RegisterRawAPI(L);
 
 	InitDelegateMetatable();
+	InitRuntimeClassMetatable();
+	InitRuntimeStructMetatble();
 
 	//set package path
 	{

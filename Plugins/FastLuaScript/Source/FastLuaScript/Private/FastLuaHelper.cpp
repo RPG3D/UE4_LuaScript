@@ -481,6 +481,23 @@ void FastLuaHelper::PushObject(lua_State* InL, UObject* InObj)
 			}
 			Class = Class->GetSuperClass();
 		}
+
+		if (Class == nullptr)
+		{
+			lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+			FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
+			lua_pop(InL, 1);
+
+			lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->GetRuntimeClassMetatableIndex());
+			if (lua_istable(InL, -1))
+			{
+				lua_setmetatable(InL, -2);
+			}
+			else
+			{
+				lua_pop(InL, 1);
+			}
+		}
 	}
 }
 
@@ -528,6 +545,23 @@ void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, co
 		}
 		StructType = Cast<UScriptStruct>(StructType->GetSuperStruct());
 	}
+
+	if (StructType == nullptr)
+	{
+		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+		FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
+		lua_pop(InL, 1);
+
+		lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->GetRuntimeStructMetatableIndex());
+		if (lua_istable(InL, -1))
+		{
+			lua_setmetatable(InL, -2);
+		}
+		else
+		{
+			lua_pop(InL, 1);
+		}
+	}
 }
 
 void FastLuaHelper::PushDelegate(lua_State* InL, UProperty* InDelegateProperty, void* InBuff, bool InMulti)
@@ -561,11 +595,11 @@ void* FastLuaHelper::FetchDelegate(lua_State* InL, int32 InIndex, bool InIsMulti
 	return nullptr;
 }
 
-int32 FastLuaHelper::CallFunction(lua_State* L)
+int32 FastLuaHelper::CallFunction(lua_State* InL)
 {
 	//SCOPE_CYCLE_COUNTER(STAT_LuaCallBP);
-	UFunction* Func = (UFunction*)lua_touserdata(L, lua_upvalueindex(1));
-	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(L, 1);
+	UFunction* Func = (UFunction*)lua_touserdata(InL, lua_upvalueindex(1));
+	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
 	UObject* Obj = nullptr;
 	if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Object)
 	{
@@ -574,7 +608,7 @@ int32 FastLuaHelper::CallFunction(lua_State* L)
 	int32 StackTop = 2;
 	if (Obj == nullptr)
 	{
-		lua_pushnil(L);
+		lua_pushnil(InL);
 		return 1;
 	}
 
@@ -597,7 +631,7 @@ int32 FastLuaHelper::CallFunction(lua_State* L)
 			}
 			else
 			{
-				//FastLuaHelper::GetFetchPropertyStr(Prop, TODO, StackTop++);
+				FastLuaHelper::FetchProperty(InL, Prop, FuncParam.GetStructMemory(), StackTop++);
 			}
 		}
 
@@ -606,7 +640,7 @@ int32 FastLuaHelper::CallFunction(lua_State* L)
 		int32 ReturnNum = 0;
 		if (ReturnProp)
 		{
-			//FastLuaHelper::GeneratePushPropertyStr(L, ReturnProp, FuncParam.GetStructMemory(), false);
+			FastLuaHelper::PushProperty(InL, ReturnProp, FuncParam.GetStructMemory());
 			++ReturnNum;
 		}
 
@@ -617,7 +651,7 @@ int32 FastLuaHelper::CallFunction(lua_State* L)
 				UProperty* Prop = *It;
 				if (Prop->HasAnyPropertyFlags(CPF_OutParm) && !Prop->HasAnyPropertyFlags(CPF_ConstParm))
 				{
-					//FastLuaHelper::GeneratePushPropertyStr(L, *It, FuncParam.GetStructMemory(), false);
+					FastLuaHelper::PushProperty(InL, *It, FuncParam.GetStructMemory());
 					++ReturnNum;
 				}
 			}
@@ -884,6 +918,23 @@ int FastLuaHelper::LuaNewStruct(lua_State* InL)
 			}
 			StructType = Cast<UScriptStruct>(StructType->GetSuperStruct());
 		}
+
+		if (StructType == nullptr)
+		{
+			lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
+			FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
+			lua_pop(InL, 1);
+
+			lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->GetRuntimeStructMetatableIndex());
+			if (lua_istable(InL, -1))
+			{
+				lua_setmetatable(InL, -2);
+			}
+			else
+			{
+				lua_pop(InL, 1);
+			}
+		}
 	}
 	return 1;
 }
@@ -915,7 +966,7 @@ int FastLuaHelper::LuaCallUnrealDelegate(lua_State* InL)
 		}
 		else
 		{
-			//FastLuaHelper::GetFetchPropertyStr(Prop, TODO, StackTop++);
+			FastLuaHelper::FetchProperty(InL, Prop, FuncParam.GetStructMemory(), StackTop++);
 		}
 	}
 
@@ -932,7 +983,7 @@ int FastLuaHelper::LuaCallUnrealDelegate(lua_State* InL)
 
 	if (ReturnProp)
 	{
-		//FastLuaHelper::GeneratePushPropertyStr(InL, ReturnProp, FuncParam.GetStructMemory(), true);
+		FastLuaHelper::PushProperty(InL, ReturnProp, FuncParam.GetStructMemory(), true);
 		++ReturnNum;
 	}
 
@@ -943,7 +994,7 @@ int FastLuaHelper::LuaCallUnrealDelegate(lua_State* InL)
 			UProperty* Prop = *It;
 			if (Prop->HasAnyPropertyFlags(CPF_OutParm) && !Prop->HasAnyPropertyFlags(CPF_ConstParm))
 			{
-				//FastLuaHelper::GeneratePushPropertyStr(InL, *It, FuncParam.GetStructMemory(), false);
+				FastLuaHelper::PushProperty(InL, *It, FuncParam.GetStructMemory(), false);
 				++ReturnNum;
 			}
 		}
@@ -1184,6 +1235,141 @@ int FastLuaHelper::UserDelegateGC(lua_State* InL)
 			DelegateWrapper->DelegateInst = nullptr;
 		}
 	}
+
+	return 0;
+}
+
+int32 FastLuaHelper::ObjectIndex(lua_State* InL)
+{
+	//SCOPE_CYCLE_COUNTER(STAT_ObjectIndex);
+
+	FLuaObjectWrapper* ObjectWrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
+	const char* FieldName = lua_tostring(InL, 2);
+	if (FieldName && ObjectWrapper && ObjectWrapper->WrapperType == ELuaUnrealWrapperType::Object)
+	{
+		UFunction* Func = ObjectWrapper->ObjInst->GetClass()->FindFunctionByName(FName(FieldName));
+		//stat with Get
+		UProperty* Prop = Func ? nullptr : ObjectWrapper->ObjInst->GetClass()->FindPropertyByName(FName(FieldName + 3));
+		if (Func)
+		{
+			lua_pushlightuserdata(InL, Func);
+			lua_pushcclosure(InL, CallFunction, 1);
+		}
+		else if (Prop && FieldName[1] == 'e' && FieldName[2] == 't')
+		{
+			if (FieldName[0] == 'G')
+			{
+				lua_pushlightuserdata(InL, Prop);
+				lua_pushcclosure(InL, GetObjectProperty, 1);
+			}
+			else if (FieldName[0] == 'S')
+			{
+				lua_pushlightuserdata(InL, Prop);
+				lua_pushcclosure(InL, SetObjectProperty, 1);
+			}
+			else
+			{
+				lua_pushnil(InL);
+			}
+		}
+		else
+		{
+			lua_pushnil(InL);
+		}
+	}
+	else
+	{
+		lua_pushnil(InL);
+	}
+
+	return 1;
+}
+
+int32 FastLuaHelper::StructIndex(lua_State* InL)
+{
+	//SCOPE_CYCLE_COUNTER(STAT_StructIndex);
+	FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_touserdata(InL, 1);
+	const char* FieldName = lua_tostring(InL, 2);
+	if (FieldName && StructWrapper && StructWrapper->WrapperType == ELuaUnrealWrapperType::Struct)
+	{
+		UProperty* Prop = StructWrapper->StructType->FindPropertyByName(FName(FieldName + 3));
+		if (Prop && FieldName[1] == 'e' && FieldName[2] == 't')
+		{
+			if (FieldName[0] == 'G')
+			{
+				lua_pushlightuserdata(InL, Prop);
+				lua_pushcclosure(InL, GetStructProperty, 1);
+			}
+			else if (FieldName[0] == 'S')
+			{
+				lua_pushlightuserdata(InL, Prop);
+				lua_pushcclosure(InL, SetStructProperty, 1);
+			}
+			else
+			{
+				lua_pushnil(InL);
+			}
+		}
+	}
+	else
+	{
+		lua_pushnil(InL);
+	}
+
+	return 1;
+}
+
+int32 FastLuaHelper::GetObjectProperty(lua_State* L)
+{
+	UProperty* Prop = (UProperty*)lua_touserdata(L, lua_upvalueindex(1));
+	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(L, 1);
+	if (Wrapper == nullptr || Wrapper->WrapperType != ELuaUnrealWrapperType::Object)
+	{
+		return 0;
+	}
+
+	PushProperty(L, Prop, Wrapper->ObjInst.Get(), !Prop->HasAnyPropertyFlags(CPF_BlueprintReadOnly));
+
+	return 1;
+}
+
+int32 FastLuaHelper::SetObjectProperty(lua_State* L)
+{
+	UProperty* Prop = (UProperty*)lua_touserdata(L, lua_upvalueindex(1));
+	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(L, 1);
+	if (Wrapper == nullptr || Wrapper->WrapperType != ELuaUnrealWrapperType::Object)
+	{
+		return 0;
+	}
+
+	FetchProperty(L, Prop, Wrapper->ObjInst.Get(), 2);
+
+	return 0;
+}
+
+int32 FastLuaHelper::GetStructProperty(lua_State* InL)
+{
+	UProperty* Prop = (UProperty*)lua_touserdata(InL, lua_upvalueindex(1));
+	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, 1);
+	if (Wrapper == nullptr || Wrapper->WrapperType != ELuaUnrealWrapperType::Struct)
+	{
+		return 0;
+	}
+
+	PushProperty(InL, Prop, &(Wrapper->StructInst), !Prop->HasAnyPropertyFlags(CPF_BlueprintReadOnly));
+	return 1;
+}
+
+int32 FastLuaHelper::SetStructProperty(lua_State* InL)
+{
+	UProperty* Prop = (UProperty*)lua_touserdata(InL, lua_upvalueindex(1));
+	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, 1);
+	if (Wrapper == nullptr || Wrapper->WrapperType != ELuaUnrealWrapperType::Struct)
+	{
+		return 0;
+	}
+
+	FetchProperty(InL, Prop, &(Wrapper->StructInst), 2);
 
 	return 0;
 }
