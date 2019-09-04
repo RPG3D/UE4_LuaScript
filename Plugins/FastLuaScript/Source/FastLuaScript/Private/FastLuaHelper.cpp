@@ -1296,14 +1296,14 @@ bool FastLuaHelper::RegisterClassMetatable(lua_State* InL, const UClass* InClass
 		}
 
 
-		for (TFieldIterator<UFunction>It(InClass); It; ++It)
+		for (TFieldIterator<UFunction>It(InClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
 		{
 			lua_pushlightuserdata(InL, *It);
 			lua_pushcclosure(InL, CallFunction, 1);
 			lua_setfield(InL, -2, TCHAR_TO_UTF8(*It->GetName()));
 		}
 
-		for (TFieldIterator<UProperty>It(InClass); It; ++It)
+		for (TFieldIterator<UProperty>It(InClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
 		{
 			lua_pushlightuserdata(InL, *It);
 			lua_pushcclosure(InL, GetObjectProperty, 1);
@@ -1371,7 +1371,7 @@ bool FastLuaHelper::RegisterStructMetatable(lua_State* InL, const UScriptStruct*
 			}
 		}
 
-		for (TFieldIterator<UProperty>It(InStruct); It; ++It)
+		for (TFieldIterator<UProperty>It(InStruct, EFieldIteratorFlags::ExcludeSuper); It; ++It)
 		{
 			lua_pushlightuserdata(InL, *It);
 			lua_pushcclosure(InL, GetStructProperty, 1);
