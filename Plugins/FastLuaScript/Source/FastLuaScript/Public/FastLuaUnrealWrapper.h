@@ -28,7 +28,7 @@ public:
 	FString DoLuaCode(const FString& InCode);
 
 	
-	void RunMainFunction(const FString& InMainFile = FString("ApplicationMain"));
+	int32 RunMainFunction(const FString& InMainFile = FString("ApplicationMain"));
 
 	FString GetInstanceName() const
 	{
@@ -57,25 +57,11 @@ public:
 		return LuaTickFunctionIndex;
 	}
 
-	int32 GetRuntimeClassMetatableIndex() const
-	{
-		return ClassMetatableIndex;
-	}
-
-	int32 GetRuntimeStructMetatableIndex() const
-	{
-		return StructMetatableIndex;
-	}
-
 	//lua UE4's delegate proxy object
 	TArray<class UFastLuaDelegate*> DelegateCallLuaList;
 protected:
 
 	void InitDelegateMetatable();
-
-	void InitRuntimeClassMetatable();
-
-	void InitRuntimeStructMetatble();
 
 	//lua has to hold a long life time Uobject, GameInstance is a right one 
 	class UGameInstance* CachedGameInstance = nullptr;
@@ -96,9 +82,6 @@ protected:
 	int32 LuaTickFunctionIndex = 0;
 
 	int32 DelegateMetatableIndex = 0;
-
-	int32 ClassMetatableIndex = 0;
-	int32 StructMetatableIndex = 0;
 
 public:
 	FString LuaStateName = FString("Unknown");

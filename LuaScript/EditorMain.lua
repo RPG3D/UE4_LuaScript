@@ -6,25 +6,38 @@
 KismetSystemLibrary = KismetSystemLibrary or Unreal.LuaGetUnrealCDO("KismetSystemLibrary")
 KismetMathLibrary = KismetMathLibrary or Unreal.LuaGetUnrealCDO("KismetMathLibrary")
 
+MapProcessAPI = MapProcessAPI or Unreal.LuaGetUnrealCDO("MapProcessAPI")
+
 local Timer = require("Timer")
 
 GTimer = Timer:new("GTimer")
 
 inspect = require("inspect")
 
+RestartInterval = 15
 
-function OnCompleted()
-	print(1111)
+MapProcessAPI = MapProcessAPI or Unreal.LuaGetUnrealCDO('MapProcessAPI')
+function PostEditorInit()
+	MapProcessAPI:RestartLuaDelay(RestartInterval)
 end
 
 function Main()
 
 	print(("----------EditorLua Ram: %.2fMB----------"):format(collectgarbage("count") / 1024))
-	GTimer:SetTimer('qqq', 3, 1, OnCompleted, nil)
+	Unreal.RegisterTickFunction(LuaTick)
+	
+	--每隔RestartInterval秒重启Lua
+	print('每隔' .. tostring(RestartInterval) .. '秒将会重启Lua')
+	GTimer:SetTimer('PostEditorInit', RestartInterval, 1, PostEditorInit, nil)
+	
+	local NewData = Unreal.LuaNewStruct('Matrix')
+	local XPlane = NewData:GetXPlane()
+	local W = XPlane:GetW()
+	
 end
 
 --global timer
-function Unreal.Ticker(InDeltaTime)
+function LuaTick(InDeltaTime)
     GTimer:Tick(InDeltaTime)
 end
 

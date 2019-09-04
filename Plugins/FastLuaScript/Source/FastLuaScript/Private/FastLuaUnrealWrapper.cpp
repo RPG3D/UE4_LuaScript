@@ -10,7 +10,7 @@
 #include "UObject/StructOnScope.h"
 #include "FastLuaHelper.h"
 #include "FastLuaStat.h"
-
+#include "FastLuaDelegate.h"
 
 static int StopNewIndex(lua_State* InL)
 {
@@ -153,31 +153,6 @@ void FastLuaUnrealWrapper::InitDelegateMetatable()
 	DelegateMetatableIndex = luaL_ref(GetLuaSate(), LUA_REGISTRYINDEX);
 }
 
-void FastLuaUnrealWrapper::InitRuntimeClassMetatable()
-{
-	lua_newtable(L);
-	{
-		lua_pushvalue(L, -1);
-		ClassMetatableIndex = luaL_ref(L, LUA_REGISTRYINDEX);
-
-		lua_pushcfunction(L, FastLuaHelper::ObjectIndex);
-		lua_setfield(L, -2, "__index");
-
-	}
-}
-
-void FastLuaUnrealWrapper::InitRuntimeStructMetatble()
-{
-	lua_newtable(L);
-	{
-		lua_pushvalue(L, -1);
-		StructMetatableIndex = luaL_ref(L, LUA_REGISTRYINDEX);
-
-		lua_pushcfunction(L, FastLuaHelper::StructIndex);
-		lua_setfield(L, -2, "__index");
-
-	}
-}
 
 FastLuaUnrealWrapper::FastLuaUnrealWrapper()
 {
@@ -223,8 +198,6 @@ void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 	RegisterRawAPI(L);
 
 	InitDelegateMetatable();
-	InitRuntimeClassMetatable();
-	InitRuntimeStructMetatble();
 
 	//set package path
 	{
@@ -248,13 +221,13 @@ void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 
 void FastLuaUnrealWrapper::Reset()
 {
-	if (L)
+	for (int32 i = DelegateCallLuaList.Num() - 1; i >= 0; --i)
 	{
-		lua_close(L);
-		L = nullptr;
+		if (DelegateCallLuaList[i])
+		{
+			DelegateCallLuaList[i]->Unbind();
+		}
 	}
-
-	LuaMemory = 0;
 
 	if (LuaTickerHandle.IsValid())
 	{
@@ -262,6 +235,13 @@ void FastLuaUnrealWrapper::Reset()
 		LuaTickerHandle.Reset();
 	}
 
+	if (L)
+	{
+		lua_close(L);
+		L = nullptr;
+	}
+
+	LuaMemory = 0;
 }
 
 bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
@@ -296,7 +276,7 @@ bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 }
 
 //Lua usage: LoadMapEndedEvent:Bind("LuaBindLoadMapEnded", LuaObj, LuaFunctionName)
-void FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString("ApplicationMain")*/)
+int32 FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString("ApplicationMain")*/)
 {
 	//load entry lua
 	FString LoadMainScript = FString::Printf(TEXT("require('%s')"), *InMainFile);
@@ -320,6 +300,7 @@ void FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString(
 		LuaTickerHandle = FTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FastLuaUnrealWrapper::HandleLuaTick));
 	}
 
+	return Ret;
 }
 
 FString FastLuaUnrealWrapper::DoLuaCode(const FString& InCode)

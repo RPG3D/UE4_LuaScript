@@ -9,6 +9,18 @@
 
 int32 UFastLuaDelegate::Unbind()
 {
+	if (bIsMulti && DelegateInst)
+	{
+		FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)DelegateInst;
+		MultiDelegate->Remove(this, UFastLuaDelegate::GetWrapperFunctionName());
+	}
+
+	if (!bIsMulti && DelegateInst)
+	{
+		FScriptDelegate* SingleDelegate = (FScriptDelegate*)DelegateInst;
+		SingleDelegate->Clear();
+	}
+
 	if (LuaState == nullptr)
 	{
 		return -1;
@@ -30,18 +42,6 @@ int32 UFastLuaDelegate::Unbind()
 	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(LuaState, -1);
 	lua_pop(LuaState, 1);
 	LuaState = nullptr;
-
-	if (bIsMulti && DelegateInst)
-	{
-		FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)DelegateInst;
-		MultiDelegate->Remove(this, UFastLuaDelegate::GetWrapperFunctionName());
-	}
-
-	if (!bIsMulti && DelegateInst)
-	{
-		FScriptDelegate* SingleDelegate = (FScriptDelegate*)DelegateInst;
-		SingleDelegate->Clear();
-	}
 
 	LuaWrapper->DelegateCallLuaList.Remove(this);
 

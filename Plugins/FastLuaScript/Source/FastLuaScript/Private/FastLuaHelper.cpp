@@ -259,7 +259,7 @@ void FastLuaHelper::PushProperty(lua_State* InL, UProperty* InProp, void* InBuff
 	}
 	else if (UMulticastDelegateProperty * MultiDelegateProp = Cast<UMulticastDelegateProperty>(InProp))
 	{
-		PushDelegate(InL, DelegateProp, InBuff, true);
+		PushDelegate(InL, MultiDelegateProp, InBuff, true);
 	}
 	else if (const UArrayProperty * ArrayProp = Cast<UArrayProperty>(InProp))
 	{
@@ -466,36 +466,21 @@ void FastLuaHelper::PushObject(lua_State* InL, UObject* InObj)
 
 		SCOPE_CYCLE_COUNTER(STAT_FindClassMetatable);
 
-		UClass* Class = InObj->GetClass();
-		while (Class)
-		{
-			lua_rawgetp(InL, LUA_REGISTRYINDEX, Class);
-			if (lua_istable(InL, -1))
-			{
-				lua_setmetatable(InL, -2);
-				break;
-			}
-			else
-			{
-				lua_pop(InL, 1);
-			}
-			Class = Class->GetSuperClass();
-		}
+		const UClass* Class = InObj->GetClass();
 
-		if (Class == nullptr)
+		lua_rawgetp(InL, LUA_REGISTRYINDEX, Class);
+		if (lua_istable(InL, -1))
 		{
-			lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-			FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
+			lua_setmetatable(InL, -2);
+		}
+		else
+		{
 			lua_pop(InL, 1);
 
-			lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->GetRuntimeClassMetatableIndex());
-			if (lua_istable(InL, -1))
+			if (RegisterClassMetatable(InL, Class))
 			{
+				lua_rawgetp(InL, LUA_REGISTRYINDEX, Class);
 				lua_setmetatable(InL, -2);
-			}
-			else
-			{
-				lua_pop(InL, 1);
 			}
 		}
 	}
@@ -530,38 +515,23 @@ void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, co
 
 	SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
 
-	const UScriptStruct* StructType = InStruct;
-	while (StructType)
-	{
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, StructType);
-		if (lua_istable(InL, -1))
-		{
-			lua_setmetatable(InL, -2);
-			break;
-		}
-		else
-		{
-			lua_pop(InL, 1);
-		}
-		StructType = Cast<UScriptStruct>(StructType->GetSuperStruct());
-	}
 
-	if (StructType == nullptr)
+	lua_rawgetp(InL, LUA_REGISTRYINDEX, InStruct);
+	if (lua_istable(InL, -1))
 	{
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-		FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
+		lua_setmetatable(InL, -2);
+	}
+	else
+	{
 		lua_pop(InL, 1);
 
-		lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->GetRuntimeStructMetatableIndex());
-		if (lua_istable(InL, -1))
+		if (RegisterStructMetatable(InL, InStruct))
 		{
+			lua_rawgetp(InL, LUA_REGISTRYINDEX, InStruct);
 			lua_setmetatable(InL, -2);
 		}
-		else
-		{
-			lua_pop(InL, 1);
-		}
 	}
+
 }
 
 void FastLuaHelper::PushDelegate(lua_State* InL, UProperty* InDelegateProperty, void* InBuff, bool InMulti)
@@ -903,36 +873,19 @@ int FastLuaHelper::LuaNewStruct(lua_State* InL)
 
 		SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
 
-		const UScriptStruct* StructType = StructClass;
-		while (StructType)
+		lua_rawgetp(InL, LUA_REGISTRYINDEX, StructClass);
+		if (lua_istable(InL, -1))
 		{
-			lua_rawgetp(InL, LUA_REGISTRYINDEX, StructType);
-			if (lua_istable(InL, -1))
-			{
-				lua_setmetatable(InL, -2);
-				break;
-			}
-			else
-			{
-				lua_pop(InL, 1);
-			}
-			StructType = Cast<UScriptStruct>(StructType->GetSuperStruct());
+			lua_setmetatable(InL, -2);
 		}
-
-		if (StructType == nullptr)
+		else
 		{
-			lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-			FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
 			lua_pop(InL, 1);
 
-			lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->GetRuntimeStructMetatableIndex());
-			if (lua_istable(InL, -1))
+			if (RegisterStructMetatable(InL, StructClass))
 			{
+				lua_rawgetp(InL, LUA_REGISTRYINDEX, StructClass);
 				lua_setmetatable(InL, -2);
-			}
-			else
-			{
-				lua_pop(InL, 1);
 			}
 		}
 	}
@@ -1239,86 +1192,6 @@ int FastLuaHelper::UserDelegateGC(lua_State* InL)
 	return 0;
 }
 
-int32 FastLuaHelper::ObjectIndex(lua_State* InL)
-{
-	//SCOPE_CYCLE_COUNTER(STAT_ObjectIndex);
-
-	FLuaObjectWrapper* ObjectWrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
-	const char* FieldName = lua_tostring(InL, 2);
-	if (FieldName && ObjectWrapper && ObjectWrapper->WrapperType == ELuaUnrealWrapperType::Object)
-	{
-		UFunction* Func = ObjectWrapper->ObjInst->GetClass()->FindFunctionByName(FName(FieldName));
-		//stat with Get
-		UProperty* Prop = Func ? nullptr : ObjectWrapper->ObjInst->GetClass()->FindPropertyByName(FName(FieldName + 3));
-		if (Func)
-		{
-			lua_pushlightuserdata(InL, Func);
-			lua_pushcclosure(InL, CallFunction, 1);
-		}
-		else if (Prop && FieldName[1] == 'e' && FieldName[2] == 't')
-		{
-			if (FieldName[0] == 'G')
-			{
-				lua_pushlightuserdata(InL, Prop);
-				lua_pushcclosure(InL, GetObjectProperty, 1);
-			}
-			else if (FieldName[0] == 'S')
-			{
-				lua_pushlightuserdata(InL, Prop);
-				lua_pushcclosure(InL, SetObjectProperty, 1);
-			}
-			else
-			{
-				lua_pushnil(InL);
-			}
-		}
-		else
-		{
-			lua_pushnil(InL);
-		}
-	}
-	else
-	{
-		lua_pushnil(InL);
-	}
-
-	return 1;
-}
-
-int32 FastLuaHelper::StructIndex(lua_State* InL)
-{
-	//SCOPE_CYCLE_COUNTER(STAT_StructIndex);
-	FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_touserdata(InL, 1);
-	const char* FieldName = lua_tostring(InL, 2);
-	if (FieldName && StructWrapper && StructWrapper->WrapperType == ELuaUnrealWrapperType::Struct)
-	{
-		UProperty* Prop = StructWrapper->StructType->FindPropertyByName(FName(FieldName + 3));
-		if (Prop && FieldName[1] == 'e' && FieldName[2] == 't')
-		{
-			if (FieldName[0] == 'G')
-			{
-				lua_pushlightuserdata(InL, Prop);
-				lua_pushcclosure(InL, GetStructProperty, 1);
-			}
-			else if (FieldName[0] == 'S')
-			{
-				lua_pushlightuserdata(InL, Prop);
-				lua_pushcclosure(InL, SetStructProperty, 1);
-			}
-			else
-			{
-				lua_pushnil(InL);
-			}
-		}
-	}
-	else
-	{
-		lua_pushnil(InL);
-	}
-
-	return 1;
-}
-
 int32 FastLuaHelper::GetObjectProperty(lua_State* L)
 {
 	UProperty* Prop = (UProperty*)lua_touserdata(L, lua_upvalueindex(1));
@@ -1372,4 +1245,148 @@ int32 FastLuaHelper::SetStructProperty(lua_State* InL)
 	FetchProperty(InL, Prop, &(Wrapper->StructInst), 2);
 
 	return 0;
+}
+
+bool FastLuaHelper::RegisterClassMetatable(lua_State* InL, const UClass* InClass)
+{
+	if (InClass == nullptr || InL == nullptr)
+	{
+		return false;
+	}
+
+	int tp = lua_gettop(InL);
+
+	//try find metatable
+	lua_rawgetp(InL, LUA_REGISTRYINDEX, InClass);
+	if (lua_istable(InL, -1))
+	{
+		//already exist!
+		lua_pop(InL, 1);
+	}
+	else
+	{
+		lua_pop(InL, 1);
+
+		//create new table
+		lua_newtable(InL);
+		{
+			lua_pushvalue(InL, -1);
+			lua_rawsetp(InL, LUA_REGISTRYINDEX, InClass);
+
+			lua_pushvalue(InL, -1);
+			lua_setfield(InL, -2, "__index");
+
+			UClass* SuperClass = InClass->GetSuperClass();
+			while (SuperClass)
+			{
+				if (RegisterClassMetatable(InL, SuperClass))
+				{
+					lua_rawgetp(InL, LUA_REGISTRYINDEX, SuperClass);
+					if (lua_istable(InL, -1))
+					{
+						lua_setmetatable(InL, -2);
+					}
+					else
+					{
+						lua_pop(InL, 1);
+					}
+				}
+				SuperClass = SuperClass->GetSuperClass();
+			}
+		}
+
+
+		for (TFieldIterator<UFunction>It(InClass); It; ++It)
+		{
+			lua_pushlightuserdata(InL, *It);
+			lua_pushcclosure(InL, CallFunction, 1);
+			lua_setfield(InL, -2, TCHAR_TO_UTF8(*It->GetName()));
+		}
+
+		for (TFieldIterator<UProperty>It(InClass); It; ++It)
+		{
+			lua_pushlightuserdata(InL, *It);
+			lua_pushcclosure(InL, GetObjectProperty, 1);
+			FString GetPropName = FString("Get") + It->GetName();
+			lua_setfield(InL, -2, TCHAR_TO_UTF8(*GetPropName));
+
+			lua_pushlightuserdata(InL, *It);
+			lua_pushcclosure(InL, SetObjectProperty, 1);
+			FString SetPropName = FString("Set") + It->GetName();
+			lua_setfield(InL, -2, TCHAR_TO_UTF8(*SetPropName));
+		}
+
+	}
+
+	lua_settop(InL, tp);
+
+	return true;
+}
+
+bool FastLuaHelper::RegisterStructMetatable(lua_State* InL, const UScriptStruct* InStruct)
+{
+	if (InStruct == nullptr || InL == nullptr)
+	{
+		return false;
+	}
+
+	int tp = lua_gettop(InL);
+
+	//try find metatable
+	lua_rawgetp(InL, LUA_REGISTRYINDEX, InStruct);
+	if (lua_istable(InL, -1))
+	{
+		//already exist!
+		lua_pop(InL, 1);
+	}
+	else
+	{
+		lua_pop(InL, 1);
+
+		//create new table
+		lua_newtable(InL);
+		{
+			lua_pushvalue(InL, -1);
+			lua_rawsetp(InL, LUA_REGISTRYINDEX, InStruct);
+
+			lua_pushvalue(InL, -1);
+			lua_setfield(InL, -2, "__index");
+
+			UScriptStruct* SuperStruct = Cast<UScriptStruct>(InStruct->GetSuperStruct());
+			while (SuperStruct)
+			{
+				if (RegisterStructMetatable(InL, SuperStruct))
+				{
+					lua_rawgetp(InL, LUA_REGISTRYINDEX, SuperStruct);
+					if (lua_istable(InL, -1))
+					{
+						lua_setmetatable(InL, -2);
+					}
+					else
+					{
+						lua_pop(InL, 1);
+					}
+				}
+				SuperStruct = Cast<UScriptStruct>(SuperStruct->GetSuperStruct());
+			}
+		}
+
+		for (TFieldIterator<UProperty>It(InStruct); It; ++It)
+		{
+			lua_pushlightuserdata(InL, *It);
+			lua_pushcclosure(InL, GetStructProperty, 1);
+			FString GetPropName = FString("Get") + It->GetName();
+			lua_setfield(InL, -2, TCHAR_TO_UTF8(*GetPropName));
+
+			lua_pushlightuserdata(InL, *It);
+			lua_pushcclosure(InL, SetStructProperty, 1);
+			FString SetPropName = FString("Set") + It->GetName();
+			lua_setfield(InL, -2, TCHAR_TO_UTF8(*SetPropName));
+		}
+
+	}
+
+	lua_settop(InL, tp);
+
+	return true;
 }
