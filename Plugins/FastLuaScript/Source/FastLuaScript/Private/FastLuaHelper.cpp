@@ -1184,7 +1184,15 @@ int FastLuaHelper::UserDelegateGC(lua_State* InL)
 	{
 		if (DelegateWrapper->bIsUserDefined)
 		{
-			delete DelegateWrapper->DelegateInst;
+			if (DelegateWrapper->bIsMulti)
+			{
+				delete ((FMulticastScriptDelegate*)DelegateWrapper->DelegateInst);
+			}
+			else
+			{
+				delete ((FScriptDelegate*)DelegateWrapper->DelegateInst);
+			}
+
 			DelegateWrapper->DelegateInst = nullptr;
 		}
 	}
@@ -1285,6 +1293,7 @@ bool FastLuaHelper::RegisterClassMetatable(lua_State* InL, const UClass* InClass
 					if (lua_istable(InL, -1))
 					{
 						lua_setmetatable(InL, -2);
+						break;
 					}
 					else
 					{
@@ -1361,6 +1370,7 @@ bool FastLuaHelper::RegisterStructMetatable(lua_State* InL, const UScriptStruct*
 					if (lua_istable(InL, -1))
 					{
 						lua_setmetatable(InL, -2);
+						break;
 					}
 					else
 					{
