@@ -1290,15 +1290,8 @@ bool FastLuaHelper::RegisterClassMetatable(lua_State* InL, const UClass* InClass
 				if (RegisterClassMetatable(InL, SuperClass))
 				{
 					lua_rawgetp(InL, LUA_REGISTRYINDEX, SuperClass);
-					if (lua_istable(InL, -1))
-					{
-						lua_setmetatable(InL, -2);
-						break;
-					}
-					else
-					{
-						lua_pop(InL, 1);
-					}
+					lua_setmetatable(InL, -2);
+					break;
 				}
 				SuperClass = SuperClass->GetSuperClass();
 			}
@@ -1367,15 +1360,8 @@ bool FastLuaHelper::RegisterStructMetatable(lua_State* InL, const UScriptStruct*
 				if (RegisterStructMetatable(InL, SuperStruct))
 				{
 					lua_rawgetp(InL, LUA_REGISTRYINDEX, SuperStruct);
-					if (lua_istable(InL, -1))
-					{
-						lua_setmetatable(InL, -2);
-						break;
-					}
-					else
-					{
-						lua_pop(InL, 1);
-					}
+					lua_setmetatable(InL, -2);
+					break;
 				}
 				SuperStruct = Cast<UScriptStruct>(SuperStruct->GetSuperStruct());
 			}
