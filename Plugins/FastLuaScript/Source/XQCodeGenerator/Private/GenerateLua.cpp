@@ -863,7 +863,7 @@ FString GenerateLua::GenerateFetchPropertyStr(const UProperty* InProp, const FSt
 	{
 		FString MetaClassName = ObjectProp->PropertyClass->GetName();
 		FString MetaClassPrefix = ObjectProp->PropertyClass->GetPrefixCPP();
-		BodyStr = FString::Printf(TEXT("FLuaObjectWrapper* %s_Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, %d); \n\t%s%s* %s = %s_Wrapper ? Cast<%s%s>(%s_Wrapper->ObjInst.Get()) : nullptr;"), *InParamName, InStackIndex, *MetaClassPrefix, *MetaClassName, *InParamName, *InParamName, *MetaClassPrefix, *MetaClassName, *InParamName);
+		BodyStr = FString::Printf(TEXT("%s%s* %s = Cast<%s%s>(FastLuaHelper::FetchObject(InL, %d));"), *MetaClassPrefix, *MetaClassName, *InParamName, *MetaClassPrefix, *MetaClassName, InStackIndex);
 	}
 	else if (const USoftClassProperty* SoftClassProp = Cast<USoftClassProperty>(InProp))
 	{
