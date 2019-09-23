@@ -268,7 +268,7 @@ void FastLuaHelper::PushProperty(lua_State* InL, UProperty* InProp, void* InBuff
 		for (int32 i = 0; i < ArrayHelper.Num(); ++i)
 		{
 			PushProperty(InL, ArrayProp->Inner, ArrayHelper.GetRawPtr(i), true);
-			lua_rawseti(InL, -2, i);
+			lua_rawseti(InL, -2, i + 1);
 		}
 	}
 	else if (const USetProperty * SetProp = Cast<USetProperty>(InProp))
