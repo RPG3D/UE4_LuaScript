@@ -23,14 +23,11 @@ public class FastLuaScript : ModuleRules
             }
             ); ;
 
-		PrivateIncludePaths.AddRange(
-			new string[] {
-				// ... add other private include paths required here ...
-                "Generated"
-            }
-			);
-			
-		
+        if(LuaCodeGenerated == 1)
+        {
+            PrivateIncludePaths.Add("Generated");
+        }
+
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{

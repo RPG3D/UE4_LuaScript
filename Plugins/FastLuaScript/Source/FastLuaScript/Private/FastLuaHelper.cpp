@@ -491,7 +491,7 @@ void* FastLuaHelper::FetchStruct(lua_State* InL, int32 InIndex, int32 InDesiredS
 	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, InIndex);
 	if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Struct && Wrapper->StructType->GetStructureSize() >= InDesiredSize)
 	{
-		return &(Wrapper->StructInst);
+		return Wrapper->StructInst;
 	}
 
 	return nullptr;
@@ -505,13 +505,13 @@ void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, co
 		return;
 	}
 
-	const int32 StructSize = FMath::Max(InStruct->GetStructureSize(), 1);
-	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper) + StructSize);
+
+	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper));
 	Wrapper->WrapperType = ELuaUnrealWrapperType::Struct;
 	Wrapper->StructType = InStruct;
-	Wrapper->StructInst = nullptr;
-
-	InStruct->CopyScriptStruct(&(Wrapper->StructInst), InBuff);
+	Wrapper->StructInst = new uint8[InStruct->GetStructureSize()];
+	InStruct->InitializeDefaultValue(Wrapper->StructInst);
+	InStruct->CopyScriptStruct(Wrapper->StructInst, InBuff);
 
 	SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
 
@@ -565,7 +565,7 @@ void* FastLuaHelper::FetchDelegate(lua_State* InL, int32 InIndex, bool InIsMulti
 	return nullptr;
 }
 
-int32 FastLuaHelper::CallFunction(lua_State* InL)
+int32 FastLuaHelper::CallUnrealFunction(lua_State* InL)
 {
 	//SCOPE_CYCLE_COUNTER(STAT_LuaCallBP);
 	UFunction* Func = (UFunction*)lua_touserdata(InL, lua_upvalueindex(1));
@@ -865,11 +865,11 @@ int FastLuaHelper::LuaNewStruct(lua_State* InL)
 	}
 	else
 	{
-		FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper) + StructClass->GetStructureSize());
+		FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper));
 		StructWrapper->StructType = StructClass;
 		StructWrapper->WrapperType = ELuaUnrealWrapperType::Struct;
-		StructWrapper->StructInst = nullptr;
-		StructClass->InitializeDefaultValue((uint8*)(&StructWrapper->StructInst));
+		StructWrapper->StructInst = new uint8[StructClass->GetStructureSize()];
+		StructClass->InitializeDefaultValue((uint8*)StructWrapper->StructInst);
 
 		SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
 
@@ -1200,6 +1200,19 @@ int FastLuaHelper::UserDelegateGC(lua_State* InL)
 	return 0;
 }
 
+int FastLuaHelper::StructGC(lua_State* InL)
+{
+	FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_touserdata(InL, -1);
+
+	if (StructWrapper && StructWrapper->WrapperType == ELuaUnrealWrapperType::Struct)
+	{
+		delete StructWrapper->StructInst;
+		StructWrapper->StructInst = nullptr;
+	}
+
+	return 0;
+}
+
 int32 FastLuaHelper::GetObjectProperty(lua_State* L)
 {
 	UProperty* Prop = (UProperty*)lua_touserdata(L, lua_upvalueindex(1));
@@ -1237,7 +1250,7 @@ int32 FastLuaHelper::GetStructProperty(lua_State* InL)
 		return 0;
 	}
 
-	PushProperty(InL, Prop, &(Wrapper->StructInst), !Prop->HasAnyPropertyFlags(CPF_BlueprintReadOnly));
+	PushProperty(InL, Prop, Wrapper->StructInst, !Prop->HasAnyPropertyFlags(CPF_BlueprintReadOnly));
 	return 1;
 }
 
@@ -1250,7 +1263,7 @@ int32 FastLuaHelper::SetStructProperty(lua_State* InL)
 		return 0;
 	}
 
-	FetchProperty(InL, Prop, &(Wrapper->StructInst), 2);
+	FetchProperty(InL, Prop, Wrapper->StructInst, 2);
 
 	return 0;
 }
@@ -1297,14 +1310,6 @@ bool FastLuaHelper::RegisterClassMetatable(lua_State* InL, const UClass* InClass
 			}
 		}
 
-
-		for (TFieldIterator<UFunction>It(InClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
-		{
-			lua_pushlightuserdata(InL, *It);
-			lua_pushcclosure(InL, CallFunction, 1);
-			lua_setfield(InL, -2, TCHAR_TO_UTF8(*It->GetName()));
-		}
-
 		for (TFieldIterator<UProperty>It(InClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
 		{
 			lua_pushlightuserdata(InL, *It);
@@ -1318,6 +1323,12 @@ bool FastLuaHelper::RegisterClassMetatable(lua_State* InL, const UClass* InClass
 			lua_setfield(InL, -2, TCHAR_TO_UTF8(*SetPropName));
 		}
 
+		for (TFieldIterator<UFunction>It(InClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
+		{
+			lua_pushlightuserdata(InL, *It);
+			lua_pushcclosure(InL, CallUnrealFunction, 1);
+			lua_setfield(InL, -2, TCHAR_TO_UTF8(*It->GetName()));
+		}
 	}
 
 	lua_settop(InL, tp);
@@ -1380,6 +1391,8 @@ bool FastLuaHelper::RegisterStructMetatable(lua_State* InL, const UScriptStruct*
 			lua_setfield(InL, -2, TCHAR_TO_UTF8(*SetPropName));
 		}
 
+		lua_pushcfunction(InL, FastLuaHelper::StructGC);
+		lua_setfield(InL, -2, "__gc");
 	}
 
 	lua_settop(InL, tp);

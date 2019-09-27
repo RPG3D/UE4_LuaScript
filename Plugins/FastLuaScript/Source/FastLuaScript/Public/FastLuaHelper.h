@@ -29,7 +29,7 @@ public:
 	ELuaUnrealWrapperType WrapperType = ELuaUnrealWrapperType::Struct;
 	const UScriptStruct * StructType = nullptr;
 	//just a memory address flag
-	const void* StructInst = nullptr;
+	uint8* StructInst = nullptr;
 };
 
 struct FLuaDelegateWrapper
@@ -79,7 +79,7 @@ public:
 	static void PushDelegate(lua_State* InL, class UProperty* InDelegateProperty, void* InBuff, bool InMulti);
 	static void* FetchDelegate(lua_State* InL, int32 InIndex, bool InIsMulti = true);
 
-	static int32 CallFunction(lua_State* L);
+	static int32 CallUnrealFunction(lua_State* L);
 
 	static void* LuaAlloc(void* ud, void* ptr, size_t osize, size_t nsize);
 
@@ -105,6 +105,7 @@ public:
 	static int RegisterTickFunction(lua_State* InL);
 
 	static int UserDelegateGC(lua_State* InL);
+	static int StructGC(lua_State* InL);
 
 	static int32 GetObjectProperty(lua_State* L);
 	static int32 SetObjectProperty(lua_State* L);
