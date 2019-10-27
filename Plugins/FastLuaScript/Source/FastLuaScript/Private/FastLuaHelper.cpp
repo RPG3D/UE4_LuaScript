@@ -1024,7 +1024,7 @@ int FastLuaHelper::LuaNewDelegate(lua_State* InL)
 	return 1;
 }
 
-//Lua usage: LoadMapEndedEvent:Bind(LuaFunction, LuaObj, InWrapperObjectName[option])
+//Lua usage: LoadMapEndedEvent:Bind(LuaFunction, LuaObj)
 int FastLuaHelper::LuaBindDelegate(lua_State* InL)
 {
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
@@ -1086,7 +1086,7 @@ int FastLuaHelper::LuaBindDelegate(lua_State* InL)
 	return 1;
 }
 
-//Lua usage: LoadMapEndedEvent:Bind(WrapperObject[option, remove single])
+//Lua usage: LoadMapEndedEvent:Unbind(WrapperObject[option, remove single])
 int FastLuaHelper::LuaUnbindDelegate(lua_State* InL)
 {
 	bool bIsMulti = false;
