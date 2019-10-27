@@ -12,7 +12,7 @@ modify the Plugins/FastLuaScript/Config/ModuleToExport.txt to your game modules
 ## about
   LuaScript is unreal reflection based Lua API for UE4. All BlueprintCallable function & All UPROPERTY property & All Dynamic Delegate can be access in Lua.
   
-  some global function, you can find in UnrealMisc.h; example:
+  some global function, you can find in FastLuaHelper.h; example:
   
     GameInstance = Unreal.LuaGetGameInstance()
     MyUIBPClass = Unreal.LuaLoadClass(GameInstance, "/Game/UI/DebugUI.DebugUI_C")
@@ -45,6 +45,16 @@ modify the Plugins/FastLuaScript/Config/ModuleToExport.txt to your game modules
 	  TestVector:SetY(41241)
 	  print(TestVector:GetY())
       
-      
+all Unreal.LuaXXX functions, see FastLuaHelper.h
+
+    Unreal.LuaGetGameInstance();
+    Unreal.LuaLoadObject();
+    Unreal.LuaLoadClass();
+    Unreal.LuaGetUnrealCDO();//get unreal class default object
+    Unreal.LuaNewObject();
+    Unreal.LuaNewStruct();
+    Unreal.LuaNewDelegate();
+    Unreal.RegisterTickFunction();
+	
 more document will be added... if I have time.
     
