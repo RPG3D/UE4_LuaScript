@@ -27,15 +27,15 @@ modify the Plugins/FastLuaScript/Config/ModuleToExport.txt to your game modules
    
  for delegate:
  
-     GameUIHandler = {}
+     GameUIHandler = {} 
      
-     function GameUIHandler.OnStartGame()
+     function GameUIHandler:OnStartGame()
          print('StartGame')
      end
- 
+     
     local MyBtn = MyUMGHelper:FindWidgetInUMG(DebugUIInstance, "TestBtn")
-    --param is: unique name, lua table, function name
-    MyBtn:GetOnClicked():Bind("UniqueNameUsedForUnbind", GameUIHandler, 'OnStartGame')
+    --param is: lua function, lua table[option]
+    MyBtn:GetOnClicked():Bind(GameUIHandler.OnStartGame, GameUIHandler)
     
  for struct 
  
@@ -44,6 +44,9 @@ modify the Plugins/FastLuaScript/Config/ModuleToExport.txt to your game modules
 	  print(TestVector:GetY())
 	  TestVector:SetY(41241)
 	  print(TestVector:GetY())
+	  
+    or:(not Hight Performance!, but useful when no c++ function:Make_SomeStruct())
+    local TestVec = Unreal.LuaNewStruct("Vector")
       
 all Unreal.LuaXXX functions, see FastLuaHelper.h
 
