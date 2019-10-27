@@ -18,7 +18,7 @@ modify the Plugins/FastLuaScript/Config/ModuleToExport.txt to your game modules
     MyUIBPClass = Unreal.LuaLoadClass(GameInstance, "/Game/UI/DebugUI.DebugUI_C")
     then call create widget instance and add to viewport
   
-  Unreal.LuaGetUnrealCDO() is used for get Class Default Object instance, example: 
+  Unreal.LuaGetUnrealCDO() is used for getting Class Default Object instance, example: 
   
     KismetSystemLibrary = KismetSystemLibrary or Unreal.LuaGetUnrealCDO("KismetSystemLibrary")
     
