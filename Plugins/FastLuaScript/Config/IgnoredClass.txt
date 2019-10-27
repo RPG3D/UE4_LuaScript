@@ -11,3 +11,4 @@ FrameTime
 AtmospherePrecomputeParameters
 InteriorSettings
 QualifiedFrameTime
+Brush

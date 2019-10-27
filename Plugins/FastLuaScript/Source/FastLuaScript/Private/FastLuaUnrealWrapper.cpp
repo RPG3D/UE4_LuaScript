@@ -2,7 +2,7 @@
 
 #include "FastLuaUnrealWrapper.h"
 #include "Package.h"
-#include "lua.hpp"
+#include "lua/lua.hpp"
 #include "Engine/GameInstance.h"
 #include "UObjectIterator.h"
 #include "Paths.h"

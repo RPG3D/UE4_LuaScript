@@ -3,7 +3,7 @@
 #include "FastLuaHelper.h"
 #include "StructOnScope.h"
 #include "CoreUObject.h"
-#include "lua.hpp"
+#include "lua/lua.hpp"
 #include "FastLuaUnrealWrapper.h"
 #include "FastLuaScript.h"
 #include "FastLuaDelegate.h"
@@ -499,7 +499,7 @@ void* FastLuaHelper::FetchStruct(lua_State* InL, int32 InIndex, int32 InDesiredS
 
 void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, const void* InBuff)
 {
-	if (InStruct == nullptr || InBuff == nullptr)
+	if (InStruct == nullptr)
 	{
 		lua_pushnil(InL);
 		return;
@@ -509,9 +509,13 @@ void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, co
 	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper));
 	Wrapper->WrapperType = ELuaUnrealWrapperType::Struct;
 	Wrapper->StructType = InStruct;
-	Wrapper->StructInst = new uint8[InStruct->GetStructureSize()];
+	Wrapper->StructInst = (uint8*)FMemory::Malloc(InStruct->GetStructureSize());
 	InStruct->InitializeDefaultValue(Wrapper->StructInst);
-	InStruct->CopyScriptStruct(Wrapper->StructInst, InBuff);
+
+	if (InBuff != nullptr)
+	{
+		InStruct->CopyScriptStruct(Wrapper->StructInst, InBuff);
+	}
 
 	SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
 
@@ -534,19 +538,52 @@ void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, co
 
 }
 
-void FastLuaHelper::PushDelegate(lua_State* InL, UProperty* InDelegateProperty, void* InBuff, bool InMulti)
+void FastLuaHelper::PushDelegate(lua_State* InL, UProperty* InDelegateProperty, void* InBuff, bool InMulti, UFunction* InFunction)
 {
-	if (InDelegateProperty == nullptr || InBuff == nullptr)
-	{
-		lua_pushnil(InL);
-		return;
-	}
+
 	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
 	Wrapper->WrapperType = ELuaUnrealWrapperType::Delegate;
 	Wrapper->bIsMulti = InMulti;
-	Wrapper->bIsUserDefined = false;
-	Wrapper->DelegateInst = InMulti ? (void*)((UMulticastDelegateProperty*)InDelegateProperty)->ContainerPtrToValuePtr<FMulticastScriptDelegate>(InBuff) : (void*)((UDelegateProperty*)InDelegateProperty)->GetPropertyValuePtr_InContainer(InBuff);
-	Wrapper->FunctionSignature = InMulti ? ((UMulticastDelegateProperty*)InDelegateProperty)->SignatureFunction : ((UDelegateProperty*)InDelegateProperty)->SignatureFunction;
+
+	if (InDelegateProperty != nullptr && InBuff != nullptr)
+	{
+		if (InMulti)
+		{
+			Wrapper->DelegateInst = (uint8*)((UMulticastDelegateProperty*)InDelegateProperty)->ContainerPtrToValuePtr<FMulticastScriptDelegate>(InBuff);
+			Wrapper->FunctionSignature = ((UMulticastDelegateProperty*)InDelegateProperty)->SignatureFunction;
+		}
+		else
+		{
+			Wrapper->DelegateInst = (uint8*)((UDelegateProperty*)InDelegateProperty)->GetPropertyValuePtr_InContainer(InBuff);
+			Wrapper->FunctionSignature = ((UDelegateProperty*)InDelegateProperty)->SignatureFunction;
+		}
+
+		Wrapper->bIsUserDefined = false;
+	}
+	else if (InFunction)
+	{
+		if (InMulti)
+		{
+			Wrapper->DelegateInst = (uint8*)FMemory::Malloc(sizeof(FMulticastScriptDelegate));
+			new(Wrapper->DelegateInst) FMulticastScriptDelegate();
+		}
+		else
+		{
+			Wrapper->DelegateInst = (uint8*)FMemory::Malloc(sizeof(FScriptDelegate));
+			new(Wrapper->DelegateInst) FScriptDelegate();
+		}
+
+		Wrapper->FunctionSignature = InFunction;
+		Wrapper->bIsUserDefined = true;
+	}
+	else
+	{
+		//error!
+		Wrapper->DelegateInst = nullptr;
+		Wrapper->FunctionSignature = nullptr;
+		Wrapper->bIsUserDefined = false;
+	}
+	
 	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
 	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
 	lua_pop(InL, 1);
@@ -859,36 +896,8 @@ int FastLuaHelper::LuaNewStruct(lua_State* InL)
 {
 	FString StructName = UTF8_TO_TCHAR(lua_tostring(InL, 1));
 	UScriptStruct* StructClass = FindObject<UScriptStruct>(ANY_PACKAGE, *StructName);
-	if (StructClass == nullptr)
-	{
-		lua_pushnil(InL);
-	}
-	else
-	{
-		FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper));
-		StructWrapper->StructType = StructClass;
-		StructWrapper->WrapperType = ELuaUnrealWrapperType::Struct;
-		StructWrapper->StructInst = new uint8[StructClass->GetStructureSize()];
-		StructClass->InitializeDefaultValue((uint8*)StructWrapper->StructInst);
+	PushStruct(InL, StructClass, nullptr);
 
-		SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
-
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, StructClass);
-		if (lua_istable(InL, -1))
-		{
-			lua_setmetatable(InL, -2);
-		}
-		else
-		{
-			lua_pop(InL, 1);
-
-			if (RegisterStructMetatable(InL, StructClass))
-			{
-				lua_rawgetp(InL, LUA_REGISTRYINDEX, StructClass);
-				lua_setmetatable(InL, -2);
-			}
-		}
-	}
 	return 1;
 }
 
@@ -1006,21 +1015,11 @@ int FastLuaHelper::LuaNewDelegate(lua_State* InL)
 	if (Func == nullptr || (ScopeName.Len() > 1 && ScopeName != Func->GetOuter()->GetName()))
 	{
 		lua_pushnil(InL);
-		return 1;
 	}
-
-	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
-	Wrapper->WrapperType = ELuaUnrealWrapperType::Delegate;
-	Wrapper->bIsMulti = bIsMulti;
-	Wrapper->DelegateInst = bIsMulti ? (void*)(new FMulticastScriptDelegate()) : (void*)(new FScriptDelegate());
-	Wrapper->bIsUserDefined = true;
-	Wrapper->FunctionSignature = Func;
-
-	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
-	lua_pop(InL, 1);
-	lua_rawgeti(InL, LUA_REGISTRYINDEX, LuaWrapper->GetDelegateMetatableIndex());
-	lua_setmetatable(InL, -2);
+	else
+	{
+		PushDelegate(InL, nullptr, nullptr, bIsMulti, Func);
+	}
 
 	return 1;
 }
@@ -1180,19 +1179,22 @@ int FastLuaHelper::UserDelegateGC(lua_State* InL)
 {
 	FLuaDelegateWrapper* DelegateWrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, -1);
 
-	if (DelegateWrapper && DelegateWrapper->WrapperType == ELuaUnrealWrapperType::Delegate)
+	if (DelegateWrapper && DelegateWrapper->DelegateInst && DelegateWrapper->WrapperType == ELuaUnrealWrapperType::Delegate)
 	{
 		if (DelegateWrapper->bIsUserDefined)
 		{
 			if (DelegateWrapper->bIsMulti)
 			{
-				delete ((FMulticastScriptDelegate*)DelegateWrapper->DelegateInst);
+				((FMulticastScriptDelegate*)DelegateWrapper->DelegateInst)->Clear();
+				((FMulticastScriptDelegate*)DelegateWrapper->DelegateInst)->~FMulticastScriptDelegate();
 			}
 			else
 			{
-				delete ((FScriptDelegate*)DelegateWrapper->DelegateInst);
+				((FScriptDelegate*)DelegateWrapper->DelegateInst)->Clear();
+				((FScriptDelegate*)DelegateWrapper->DelegateInst)->~FScriptDelegate();
 			}
 
+			FMemory::Free(DelegateWrapper->DelegateInst);
 			DelegateWrapper->DelegateInst = nullptr;
 		}
 	}
@@ -1204,9 +1206,10 @@ int FastLuaHelper::StructGC(lua_State* InL)
 {
 	FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_touserdata(InL, -1);
 
-	if (StructWrapper && StructWrapper->WrapperType == ELuaUnrealWrapperType::Struct)
+	if (StructWrapper && StructWrapper->StructInst && StructWrapper->WrapperType == ELuaUnrealWrapperType::Struct)
 	{
-		delete StructWrapper->StructInst;
+		StructWrapper->StructType->DestroyStruct(StructWrapper->StructInst);
+		FMemory::Free(StructWrapper->StructInst);
 		StructWrapper->StructInst = nullptr;
 	}
 
@@ -1391,8 +1394,12 @@ bool FastLuaHelper::RegisterStructMetatable(lua_State* InL, const UScriptStruct*
 			lua_setfield(InL, -2, TCHAR_TO_UTF8(*SetPropName));
 		}
 
-		lua_pushcfunction(InL, FastLuaHelper::StructGC);
-		lua_setfield(InL, -2, "__gc");
+		if ((InStruct->StructFlags & (STRUCT_IsPlainOldData | STRUCT_NoDestructor)) == EStructFlags::STRUCT_NoFlags)
+		{
+			lua_pushcfunction(InL, FastLuaHelper::StructGC);
+			lua_setfield(InL, -2, "__gc");
+		}
+
 	}
 
 	lua_settop(InL, tp);

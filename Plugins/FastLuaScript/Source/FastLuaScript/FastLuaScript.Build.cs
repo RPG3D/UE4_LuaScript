@@ -37,7 +37,7 @@ public class FastLuaScript : ModuleRules
                 "InputCore",
                 "ClothingSystemRuntimeInterface",
 				// ... add other public dependencies that you statically link with here ...
-                "LuaSource"
+                "Lua"
             }
 			);
 

@@ -2,7 +2,7 @@
 
 #include "FastLuaDelegate.h"
 #include "FastLuaScript.h"
-#include "lua.hpp"
+#include "lua/lua.hpp"
 #include "FastLuaHelper.h"
 #include "FastLuaUnrealWrapper.h"
 #include "FastLuaStat.h"

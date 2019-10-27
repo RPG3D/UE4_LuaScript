@@ -32,7 +32,7 @@ public class LuaScript : ModuleRules
 				"Core",
                 "Engine",
 				// ... add other public dependencies that you statically link with here ...
-                "LuaSource"
+                "Lua"
 			}
 			);
 			

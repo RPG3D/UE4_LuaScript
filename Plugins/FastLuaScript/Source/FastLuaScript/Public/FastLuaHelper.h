@@ -40,7 +40,7 @@ public:
 	bool bIsMulti = false;
 	bool bIsUserDefined = false;
 	class UFunction* FunctionSignature = nullptr;
-	void* DelegateInst = nullptr;
+	uint8* DelegateInst = nullptr;
 };
 
 
@@ -76,7 +76,7 @@ public:
 	static void* FetchStruct(lua_State* InL, int32 InIndex, int32 InDesiredSize);
 	static void PushStruct(lua_State* InL, const UScriptStruct* InStruct, const void* InBuff);
 
-	static void PushDelegate(lua_State* InL, class UProperty* InDelegateProperty, void* InBuff, bool InMulti);
+	static void PushDelegate(lua_State* InL, class UProperty* InDelegateProperty, void* InBuff, bool InMulti, class UFunction* InFunction = nullptr);
 	static void* FetchDelegate(lua_State* InL, int32 InIndex, bool InIsMulti = true);
 
 	static int32 CallUnrealFunction(lua_State* L);

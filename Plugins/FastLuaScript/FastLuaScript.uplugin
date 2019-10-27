@@ -17,7 +17,11 @@
 		{
 			"Name": "FastLuaScript",
 			"Type": "Runtime",
-			"LoadingPhase": "Default"
+			"LoadingPhase": "Default",
+
+			"AdditionalDependencies": [
+				"Lua"
+			]
 		},
 		{
 			"Name": "XQCodeGenerator",
@@ -25,4 +29,5 @@
 			"LoadingPhase": "PostEngineInit"
 		}
 	]
+	
 }
