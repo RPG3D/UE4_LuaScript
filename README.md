@@ -7,6 +7,8 @@ git example:
 
     Plugins/FastLuaScript/Source/FastLuaScript/Generated/*
 
+modify the Plugins/FastLuaScript/Config/ModuleToExport.txt to your game modules
+
 ## about
   LuaScript is unreal reflection based Lua API for UE4. All BlueprintCallable function & All UPROPERTY property & All Dynamic Delegate can be access in Lua.
   
