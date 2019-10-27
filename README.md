@@ -1,6 +1,6 @@
 # LuaScript
-Simple Is Power
-
+Simple Is Power, both Runtime reflectin & auto generate static bind code are supported!
+note: add -FastLua to Visual Studio Command-Line, then F5, the static bind code will generated 
 ## about
   LuaScript is unreal runtime reflection based Lua API for UE4. All BlueprintCallable function & All UPROPERTY property & All Dynamic Delegate can be access in Lua.
   
