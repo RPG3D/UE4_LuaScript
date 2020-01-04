@@ -71,7 +71,7 @@ static int RequireFromUFS(lua_State* InL)
 
 	FileName.ReplaceInline(*FString("."), *FString("/"));
 
-	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+
 	lua_getglobal(InL, "package");
 	lua_getfield(InL, -1, "path");
 	FString LuaSearchPath = UTF8_TO_TCHAR(lua_tostring(InL, -1));
@@ -85,7 +85,18 @@ static int RequireFromUFS(lua_State* InL)
 
 		FPaths::NormalizeFilename(FullFilePath);
 
-		IFileHandle* LuaFile = PlatformFile.OpenRead(*FullFilePath);
+		IPlatformFile* PlatformFile = nullptr;
+		IFileHandle* LuaFile = nullptr;
+
+		PlatformFile = FPlatformFileManager::Get().GetPlatformFile().GetLowerLevel();
+		LuaFile = PlatformFile ? PlatformFile->OpenRead(*FullFilePath) : nullptr;
+
+		if (PlatformFile == nullptr || LuaFile == nullptr)
+		{
+			PlatformFile = &(FPlatformFileManager::Get().GetPlatformFile());
+			LuaFile = PlatformFile->OpenRead(*FullFilePath);
+		}
+		
 		if (LuaFile)
 		{
 			TArray<uint8> FileData;
@@ -201,7 +212,11 @@ void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 
 	//set package path
 	{
-		FString LuaEnvPath = FPaths::ProjectDir() / FString("LuaScript/?.lua") + FString(";") + FPaths::ProjectDir() / FString("LuaScript/?/Init.lua");
+		FString LuaEnvPath;
+
+		LuaEnvPath += FPaths::ProjectDir() / FString("LuaScript/?.lua") + FString(";") + FPaths::ProjectDir() / FString("LuaScript/?/Init.lua;");
+		LuaEnvPath += FPaths::ProjectContentDir() / FString("LuaScript/?.lua") + FString(";") + FPaths::ProjectContentDir() / FString("LuaScript/?/Init.lua;");
+		
 		lua_getglobal(L, "package");
 		FString RetString = UTF8_TO_TCHAR(lua_pushstring(L, TCHAR_TO_UTF8(*LuaEnvPath)));
 		lua_setfield(L, -2, "path");
@@ -246,25 +261,20 @@ void FastLuaUnrealWrapper::Reset()
 
 bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 {
-	static float Count = 0.f;
 	SCOPE_CYCLE_COUNTER(STAT_LuaTick);
-	if (L && LuaTickFunctionIndex)
+	if (!bTickError && L && LuaTickFunctionIndex)
 	{
 		int32 tp = lua_gettop(L);
-		lua_rawgeti(L, LUA_REGISTRYINDEX, LuaTickFunctionIndex);
+		int32 ret = lua_rawgeti(L, LUA_REGISTRYINDEX, LuaTickFunctionIndex);
 		if (lua_isfunction(L, -1))
 		{
 			lua_pushnumber(L, InDeltaTime);
 			int32 Ret = lua_pcall(L, 1, 0, 0);
 			if (Ret)
 			{
-				Count += InDeltaTime;
-				if (Count > 3.f)
-				{
-					Count = 0.f;
-					FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(L, -1))), 1, this);
-				}
-
+				bTickError = true;
+				FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(L, -1))), 1, this);
+				UE_LOG(LogTemp, Warning, TEXT("Lua stoped tick!"));
 			}
 				
 		}
@@ -301,6 +311,16 @@ int32 FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString
 	}
 
 	return Ret;
+}
+
+
+void FastLuaUnrealWrapper::SetLuaTickFunction(int32 InFunctionIndex)
+{
+	if (InFunctionIndex == 0 && LuaTickFunctionIndex > 0)
+	{
+		luaL_unref(L, LUA_REGISTRYINDEX, LuaTickFunctionIndex);
+	}
+	LuaTickFunctionIndex = InFunctionIndex;
 }
 
 FString FastLuaUnrealWrapper::DoLuaCode(const FString& InCode)

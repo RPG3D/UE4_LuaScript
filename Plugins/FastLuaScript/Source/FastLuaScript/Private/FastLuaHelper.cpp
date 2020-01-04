@@ -91,7 +91,7 @@ FString FastLuaHelper::GetPropertyTypeName(const UProperty* InProp)
 	{
 		TypeName = FString("int32");
 	}
-	else if (const UInt64Property * IntProp = Cast<UInt64Property>(InProp))
+	else if (const UInt64Property * Int64Prop = Cast<UInt64Property>(InProp))
 	{
 		TypeName = FString("int64");
 	}
@@ -263,7 +263,7 @@ void FastLuaHelper::PushProperty(lua_State* InL, UProperty* InProp, void* InBuff
 	}
 	else if (const UArrayProperty * ArrayProp = Cast<UArrayProperty>(InProp))
 	{
-		FScriptArrayHelper ArrayHelper(ArrayProp, InBuff);
+		FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(InBuff));
 		lua_newtable(InL);
 		for (int32 i = 0; i < ArrayHelper.Num(); ++i)
 		{
@@ -273,7 +273,7 @@ void FastLuaHelper::PushProperty(lua_State* InL, UProperty* InProp, void* InBuff
 	}
 	else if (const USetProperty * SetProp = Cast<USetProperty>(InProp))
 	{
-		FScriptSetHelper SetHelper(SetProp, InBuff);
+		FScriptSetHelper SetHelper(SetProp, SetProp->ContainerPtrToValuePtr<void>(InBuff));
 		lua_newtable(InL);
 		for (int32 i = 0; i < SetHelper.Num(); ++i)
 		{
@@ -283,7 +283,7 @@ void FastLuaHelper::PushProperty(lua_State* InL, UProperty* InProp, void* InBuff
 	}
 	else if (const UMapProperty * MapProp = Cast<UMapProperty>(InProp))
 	{
-		FScriptMapHelper MapHelper(MapProp, InBuff);
+		FScriptMapHelper MapHelper(MapProp, MapProp->ContainerPtrToValuePtr<void>(InBuff));
 		lua_newtable(InL);
 		for (int32 i = 0; i < MapHelper.Num(); ++i)
 		{
@@ -378,59 +378,68 @@ void FastLuaHelper::FetchProperty(lua_State* InL, const UProperty* InProp, void*
 	}
 	else if (const UArrayProperty * ArrayProp = Cast<UArrayProperty>(InProp))
 	{
-		FScriptArrayHelper ArrayHelper(ArrayProp, InBuff);
+		FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(InBuff));
 		int32 i = 0;
-		lua_pushnil(InL);
-		while (lua_next(InL, -2))
+		if (lua_istable(InL, -1))
 		{
-			if (ArrayHelper.Num() < i + 1)
+			lua_pushnil(InL);
+			while (lua_next(InL, -2))
 			{
-				ArrayHelper.AddValue();
-			}
+				if (ArrayHelper.Num() < i + 1)
+				{
+					ArrayHelper.AddValue();
+				}
 
-			FetchProperty(InL, ArrayProp->Inner, ArrayHelper.GetRawPtr(i), -1);
-			lua_pop(InL, 1);
-			++i;
+				FetchProperty(InL, ArrayProp->Inner, ArrayHelper.GetRawPtr(i), -1);
+				lua_pop(InL, 1);
+				++i;
+			}
 		}
+		
 	}
 
 	else if (const USetProperty * SetProp = Cast<USetProperty>(InProp))
 	{
-		FScriptSetHelper SetHelper(SetProp, InBuff);
+		FScriptSetHelper SetHelper(SetProp, SetProp->ContainerPtrToValuePtr<void>(InBuff));
 		int32 i = 0;
-
-		lua_pushnil(InL);
-		while (lua_next(InL, -2))
+		if (lua_istable(InL, -1))
 		{
-			if (SetHelper.Num() < i + 1)
+			lua_pushnil(InL);
+			while (lua_next(InL, -2))
 			{
-				SetHelper.AddDefaultValue_Invalid_NeedsRehash();
+				if (SetHelper.Num() < i + 1)
+				{
+					SetHelper.AddDefaultValue_Invalid_NeedsRehash();
+				}
+
+				FetchProperty(InL, SetHelper.ElementProp, SetHelper.GetElementPtr(i), -1);
+				++i;
+				lua_pop(InL, 1);
 			}
 
-			FetchProperty(InL, SetHelper.ElementProp, SetHelper.GetElementPtr(i), -1);
-			++i;
-			lua_pop(InL, 1);
 		}
-
+		
 		SetHelper.Rehash();
 	}
 	else if (const UMapProperty * MapProp = Cast<UMapProperty>(InProp))
 	{
-		FScriptMapHelper MapHelper(MapProp, InBuff);
+		FScriptMapHelper MapHelper(MapProp, MapProp->ContainerPtrToValuePtr<void>(InBuff));
 		int32 i = 0;
-
-		lua_pushnil(InL);
-		while (lua_next(InL, -2))
+		if (lua_istable(InL, -1))
 		{
-			if (MapHelper.Num() < i + 1)
+			lua_pushnil(InL);
+			while (lua_next(InL, -2))
 			{
-				MapHelper.AddDefaultValue_Invalid_NeedsRehash();
-			}
+				if (MapHelper.Num() < i + 1)
+				{
+					MapHelper.AddDefaultValue_Invalid_NeedsRehash();
+				}
 
-			FetchProperty(InL, MapProp->KeyProp, MapHelper.GetPairPtr(i), -2);
-			FetchProperty(InL, MapProp->ValueProp, MapHelper.GetPairPtr(i), -1);
-			++i;
-			lua_pop(InL, 1);
+				FetchProperty(InL, MapProp->KeyProp, MapHelper.GetPairPtr(i), -2);
+				FetchProperty(InL, MapProp->ValueProp, MapHelper.GetPairPtr(i), -1);
+				++i;
+				lua_pop(InL, 1);
+			}
 		}
 
 		MapHelper.Rehash();
@@ -762,6 +771,9 @@ void FastLuaHelper::FixStructMetatable(lua_State* InL, TArray<const UScriptStruc
 		{
 			lua_pushvalue(InL, -1);
 			lua_setfield(InL, -2, "__index");
+
+			lua_pushcfunction(InL, FastLuaHelper::StructGC);
+			lua_setfield(InL, -2, "__gc");
 		}
 		else
 		{
@@ -832,28 +844,42 @@ int FastLuaHelper::LuaLoadClass(lua_State* InL)
 		return 0;
 	}
 
-	FString ClassPath = UTF8_TO_TCHAR(lua_tostring(InL, 2));
-
-	if (UClass * FoundClass = FindObject<UClass>(ANY_PACKAGE, *ClassPath))
+	UObject* ObjOuter = nullptr;
+	FLuaObjectWrapper* OwnerWrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
+	if (OwnerWrapper && OwnerWrapper->WrapperType == ELuaUnrealWrapperType::Object)
 	{
-		FastLuaHelper::PushObject(InL, FoundClass);
-		return 1;
+		ObjOuter = OwnerWrapper->ObjInst.Get();
 	}
-
-	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
-	UObject* Owner = (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Object) ? Wrapper->ObjInst.Get() : nullptr;
-	UClass* LoadedClass = LoadObject<UClass>(Owner, *ClassPath);
-	if (LoadedClass == nullptr)
+	else
 	{
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-		FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
-		lua_pop(InL, 1);
-		FastLuaHelper::LuaLog(FString::Printf(TEXT("LoadClass failed: %s"), *ClassPath), 1, LuaWrapper);
 		return 0;
 	}
 
-	FastLuaHelper::PushObject(InL, LoadedClass);
-	return 1;
+	FString ClassName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
+
+	UClass* ObjClass = FindObject<UClass>(ANY_PACKAGE, *ClassName);
+	if (ObjClass == nullptr)
+	{
+		LoadObject<UClass>(ObjOuter, *ClassName);
+	}
+	if (ObjClass == nullptr && ClassName.Contains(FString("_C")) == false)
+	{
+		int32 Pos = ClassName.Find(FString("'/"));
+		ClassName = ClassName.Mid(Pos);
+		ClassName.ReplaceInline(*FString("'"), *FString(""));
+		ClassName += FString("_C");
+		ObjClass = LoadObject<UClass>(ObjOuter, *ClassName);
+	}
+
+	if (ObjClass)
+	{
+		FastLuaHelper::PushObject(InL, ObjClass);
+		return 1;
+	}
+	else
+	{
+		return 0;
+	}
 }
 
 //local obj = Unreal.LuaNewObject(Owner, ClassName, ObjectName[option])
@@ -879,14 +905,36 @@ int FastLuaHelper::LuaNewObject(lua_State* InL)
 
 	FString ClassName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
 
-
 	FString ObjName = UTF8_TO_TCHAR(lua_tostring(InL, 3));
 	UClass* ObjClass = FindObject<UClass>(ANY_PACKAGE, *ClassName);
 	if (ObjClass == nullptr)
 	{
+		LoadObject<UClass>(ObjOuter, *ClassName);
+	}
+
+	if (ObjClass == nullptr && ClassName.Contains(FString("_C")) == false)
+	{
+		int32 Pos = ClassName.Find(FString("'/"));
+		if (Pos > 0)
+		{
+			ClassName = ClassName.Mid(Pos);
+			ClassName.ReplaceInline(*FString("'"), *FString(""));
+			ClassName += FString("_C");
+			ObjClass = LoadObject<UClass>(ObjOuter, *ClassName);
+		}
+	}
+
+	if (ObjClass == nullptr)
+	{
 		return 0;
 	}
+
 	UObject* NewObj = NewObject<UObject>(ObjOuter, ObjClass, FName(*ObjName));
+	if (NewObj == nullptr)
+	{
+		return 0;
+	}
+
 	FastLuaHelper::PushObject(InL, NewObj);
 	return 1;
 }
@@ -1166,8 +1214,6 @@ int FastLuaHelper::RegisterTickFunction(lua_State* InL)
 		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
 		FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
 		lua_pop(InL, 1);
-
-		luaL_unref(InL, LUA_REGISTRYINDEX, LuaWrapper->GetLuaTickFunction());
 		LuaWrapper->SetLuaTickFunction(0);
 	}
 
@@ -1368,6 +1414,9 @@ bool FastLuaHelper::RegisterStructMetatable(lua_State* InL, const UScriptStruct*
 			lua_pushvalue(InL, -1);
 			lua_setfield(InL, -2, "__index");
 
+			lua_pushcfunction(InL, FastLuaHelper::StructGC);
+			lua_setfield(InL, -2, "__gc");
+
 			UScriptStruct* SuperStruct = Cast<UScriptStruct>(InStruct->GetSuperStruct());
 			while (SuperStruct)
 			{
@@ -1392,12 +1441,6 @@ bool FastLuaHelper::RegisterStructMetatable(lua_State* InL, const UScriptStruct*
 			lua_pushcclosure(InL, SetStructProperty, 1);
 			FString SetPropName = FString("Set") + It->GetName();
 			lua_setfield(InL, -2, TCHAR_TO_UTF8(*SetPropName));
-		}
-
-		if ((InStruct->StructFlags & (STRUCT_IsPlainOldData | STRUCT_NoDestructor)) == EStructFlags::STRUCT_NoFlags)
-		{
-			lua_pushcfunction(InL, FastLuaHelper::StructGC);
-			lua_setfield(InL, -2, "__gc");
 		}
 
 	}

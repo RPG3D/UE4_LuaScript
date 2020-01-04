@@ -47,10 +47,7 @@ public:
 
 	//never call me from C++!
 	//call Unreal.RegisterTickFunction(function() print(1) end) in Lua code!
-	void SetLuaTickFunction(int32 InFunctionIndex)
-	{
-		LuaTickFunctionIndex = InFunctionIndex;
-	}
+	void SetLuaTickFunction(int32 InFunctionIndex);
 
 	int32 GetLuaTickFunction() const
 	{
@@ -82,6 +79,8 @@ protected:
 	int32 LuaTickFunctionIndex = 0;
 
 	int32 DelegateMetatableIndex = 0;
+
+	bool bTickError = false;
 
 public:
 	FString LuaStateName = FString("Unknown");

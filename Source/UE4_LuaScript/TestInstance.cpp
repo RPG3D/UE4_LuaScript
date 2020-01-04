@@ -6,7 +6,7 @@
 #include "FastLuaUnrealWrapper.h"
 
 #if LUA_CODE_GENERATED
-#include "Generated/FastLuaAPI.h"
+#include "GeneratedLua/FastLuaAPI.h"
 #endif
 
 void UTestInstance::Init()

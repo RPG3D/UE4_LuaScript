@@ -4,6 +4,7 @@
 #include "UObject/MetaData.h"
 #include "FileHelper.h"
 #include "FastLuaHelper.h"
+#include "PlatformFilemanager.h"
 
 
 
@@ -195,6 +196,10 @@ int32 GenerateLua::InitConfig()
 
 int32 GenerateLua::GeneratedCode() const
 {
+
+	//delete old generated files
+	FPlatformFileManager::Get().GetPlatformFile().DeleteDirectoryRecursively(*CodeDirectory);
+
 	TMap<FString, const UClass*> AllGeneratedClass;
 
 	//write class wrapper file
@@ -225,7 +230,7 @@ int32 GenerateLua::GeneratedCode() const
 	{
 		FString APIHeaderPath = CodeDirectory / FString("FastLuaAPI.h");
 		FString HeaderStr = FString("\n// Copyright 1998-2019 Epic Games, Inc. All Rights Reserved. \n\n#pragma once \n\n#include \"CoreMinimal.h\" \n\n");
-		HeaderStr += FString::Printf(TEXT("struct FASTLUASCRIPT_API FastLuaAPI\n{\n"));
+		HeaderStr += FString::Printf(TEXT("struct FastLuaAPI\n{\n"));
 		HeaderStr += FString("\tstatic int32 RegisterUnrealClass(struct lua_State* InL);\n\n");
 		HeaderStr += FString("\tstatic int32 RegisterUnrealStruct(struct lua_State* InL);\n\n");
 		HeaderStr += FString("};\n");
@@ -241,7 +246,7 @@ int32 GenerateLua::GeneratedCode() const
 		//include class header file
 		for (auto It : AllGeneratedClass)
 		{
-			SourceStr += FString::Printf(TEXT("#include \"Generated/Class/Lua_%s.h\"\n"), *It.Key);
+			SourceStr += FString::Printf(TEXT("#include \"GeneratedLua/Class/Lua_%s.h\"\n"), *It.Key);
 		}
 
 
@@ -250,7 +255,7 @@ int32 GenerateLua::GeneratedCode() const
 		//include struct header file
 		for (auto It : AllGeneratedStruct)
 		{
-			SourceStr += FString::Printf(TEXT("#include \"Generated/Struct/Lua_%s.h\"\n"), *It.Key);
+			SourceStr += FString::Printf(TEXT("#include \"GeneratedLua/Struct/Lua_%s.h\"\n"), *It.Key);
 		}
 
 		SourceStr += FString("\n\n");

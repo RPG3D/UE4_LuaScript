@@ -30,7 +30,7 @@ public:
 	static TArray<FString> CollectHeaderFilesReferencedByClass(const class UStruct* InClass);
 
 protected:
-	FString CodeDirectory = FPaths::ProjectPluginsDir() / FString("FastLuaScript/Source/FastLuaScript/Generated");
+	FString CodeDirectory = FPaths::GameSourceDir() / FApp::GetProjectName() / FString("GeneratedLua");
 
 	TArray<FString> ModulesShouldExport;
 

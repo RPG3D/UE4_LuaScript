@@ -15,9 +15,6 @@ Plugins/*/Binaries/*
 
 # Builds
 Build/*
-WindowsNoEditor
-Android
-Android_ETC2
 
 
 # Built data for maps
@@ -36,10 +33,5 @@ DerivedDataCache/*
 #don't ignore source directory
 !source/**
 
-/Content/ParagonShinbi
-__pycache__/
-_TempPatch/
-VersionManager/
-Paks/
 
-Plugins/FastLuaScript/Source/FastLuaScript/Generated
+Source/UE4_LuaScript/GeneratedLua/*

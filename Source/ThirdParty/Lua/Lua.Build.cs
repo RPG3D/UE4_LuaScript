@@ -10,7 +10,7 @@ public class Lua : ModuleRules
 	{
 		Type = ModuleType.External;
         bEnableUndefinedIdentifierWarnings = false;
-		bEnableShadowVariableWarnings = false;
+        ShadowVariableWarningLevel = WarningLevel.Warning;
 
         string LibBaseName = GetType().Name;
         string ArchName = "x64";
@@ -62,18 +62,19 @@ public class Lua : ModuleRules
             PlatformName = "android";
             ArchName = "armv7-a";
 
+            string LibExt = ".a";
+
             if (File.Exists(Path.Combine(LibDir, PlatformName, ArchName, CompileMode, "lib" + LibBaseName + ".so")))
             {
+                LibExt = ".so";
                 AdditionalPropertiesForReceipt.Add("AndroidPlugin", Path.Combine(ModuleDirectory, LibBaseName + "_APL.xml"));
             }
-            else if(File.Exists(Path.Combine(LibDir, PlatformName, ArchName, CompileMode, "lib" + LibBaseName + ".a")))
+            else if (File.Exists(Path.Combine(LibDir, PlatformName, ArchName, CompileMode, "lib" + LibBaseName + ".a")))
             {
-
             }
 
-            PublicLibraryPaths.Add(Path.Combine(LibDir, PlatformName, "armv7-a", CompileMode));
-            PublicLibraryPaths.Add(Path.Combine(LibDir, PlatformName, "arm64-v8a", CompileMode));
-            PublicAdditionalLibraries.Add(LibBaseName);
+            PublicAdditionalLibraries.Add(Path.Combine(LibDir, PlatformName, "arm64-v8a", CompileMode, "lib" + LibBaseName + LibExt));
+            PublicAdditionalLibraries.Add(Path.Combine(LibDir, PlatformName, "armv7-a", CompileMode, "lib" + LibBaseName + LibExt));
         }
 
     }
