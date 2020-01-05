@@ -201,9 +201,9 @@ bool FastLuaHelper::IsPointerType(const FString& InTypeName)
 
 void FastLuaHelper::PushProperty(lua_State* InL, UProperty* InProp, void* InBuff, bool bRef /*= true*/)
 {
-	if (InProp == nullptr || InProp->GetClass() == nullptr)
+	if (InProp == nullptr || InBuff == nullptr)
 	{
-		LuaLog(FString("Property is nil"));
+		LuaLog(FString("Property or Buff is nil"));
 		return;
 	}
 	if (const UIntProperty * IntProp = Cast<UIntProperty>(InProp))
@@ -298,7 +298,7 @@ void FastLuaHelper::PushProperty(lua_State* InL, UProperty* InProp, void* InBuff
 void FastLuaHelper::FetchProperty(lua_State* InL, const UProperty* InProp, void* InBuff, int32 InStackIndex /*= -1*/, FName ErrorName /*= TEXT("")*/)
 {
 	//no enough params
-	if (lua_gettop(InL) < lua_absindex(InL, InStackIndex))
+	if (InBuff == nullptr || lua_gettop(InL) < lua_absindex(InL, InStackIndex))
 	{
 		return;
 	}
@@ -363,7 +363,7 @@ void FastLuaHelper::FetchProperty(lua_State* InL, const UProperty* InProp, void*
 	else if (const UDelegateProperty * DelegateProp = Cast<UDelegateProperty>(InProp))
 	{
 		FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_touserdata(InL, InStackIndex);
-		if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Delegate && Wrapper->DelegateInst && Wrapper->bIsMulti == false)
+		if (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Delegate && Wrapper->DelegateInst && !Wrapper->bIsMulti)
 		{
 			DelegateProp->SetPropertyValue_InContainer(InBuff, *(FScriptDelegate*)Wrapper->DelegateInst);
 		}
@@ -515,10 +515,20 @@ void FastLuaHelper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, co
 	}
 
 
-	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper));
+	FLuaStructWrapper* Wrapper = nullptr;
+	if (InStruct->StructFlags & EStructFlags::STRUCT_IsPlainOldData)
+	{
+		Wrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper) + InStruct->GetStructureSize() + 8);
+		Wrapper->StructInst = (uint8*)(&Wrapper->StructInst + 8);
+	}
+	else
+	{
+		Wrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper));
+		Wrapper->StructInst = (uint8*)FMemory::Malloc(InStruct->GetStructureSize());
+	}
+	
 	Wrapper->WrapperType = ELuaUnrealWrapperType::Struct;
 	Wrapper->StructType = InStruct;
-	Wrapper->StructInst = (uint8*)FMemory::Malloc(InStruct->GetStructureSize());
 	InStruct->InitializeDefaultValue(Wrapper->StructInst);
 
 	if (InBuff != nullptr)
@@ -772,8 +782,11 @@ void FastLuaHelper::FixStructMetatable(lua_State* InL, TArray<const UScriptStruc
 			lua_pushvalue(InL, -1);
 			lua_setfield(InL, -2, "__index");
 
-			lua_pushcfunction(InL, FastLuaHelper::StructGC);
-			lua_setfield(InL, -2, "__gc");
+			if ((InRegistedStructList[i]->StructFlags & EStructFlags::STRUCT_IsPlainOldData) == 0)
+			{
+				lua_pushcfunction(InL, FastLuaHelper::StructGC);
+				lua_setfield(InL, -2, "__gc");
+			}
 		}
 		else
 		{
@@ -811,25 +824,16 @@ int FastLuaHelper::LuaGetGameInstance(lua_State* InL)
 //local obj = Unreal.LuaLoadObject(Owner, ObjectPath)
 int FastLuaHelper::LuaLoadObject(lua_State* InL)
 {
-	int32 tp = lua_gettop(InL);
-	if (tp < 2)
-	{
-		return 0;
-	}
-
 	FString ObjectPath = UTF8_TO_TCHAR(lua_tostring(InL, 2));
 
 	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
 	UObject* Owner = (Wrapper && Wrapper->WrapperType == ELuaUnrealWrapperType::Object) ? Wrapper->ObjInst.Get() : nullptr;
-	UObject* LoadedObj = LoadObject<UObject>(Owner, *ObjectPath);
+	UObject* LoadedObj = FindObject<UObject>(ANY_PACKAGE, *ObjectPath);
 	if (LoadedObj == nullptr)
 	{
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-		FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
-		lua_pop(InL, 1);
-		FastLuaHelper::LuaLog(FString::Printf(TEXT("LoadObject failed: %s"), *ObjectPath), 1, LuaWrapper);
-		return 0;
+		LoadedObj = LoadObject<UObject>(Owner, *ObjectPath);
 	}
+	
 	FastLuaHelper::PushObject(InL, LoadedObj);
 
 	return 1;
@@ -838,21 +842,11 @@ int FastLuaHelper::LuaLoadObject(lua_State* InL)
 //local cls = Unreal.LuaLoadClass(Owner, ClassPath)
 int FastLuaHelper::LuaLoadClass(lua_State* InL)
 {
-	int32 tp = lua_gettop(InL);
-	if (tp < 2)
-	{
-		return 0;
-	}
-
 	UObject* ObjOuter = nullptr;
 	FLuaObjectWrapper* OwnerWrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
 	if (OwnerWrapper && OwnerWrapper->WrapperType == ELuaUnrealWrapperType::Object)
 	{
 		ObjOuter = OwnerWrapper->ObjInst.Get();
-	}
-	else
-	{
-		return 0;
 	}
 
 	FString ClassName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
@@ -860,68 +854,40 @@ int FastLuaHelper::LuaLoadClass(lua_State* InL)
 	UClass* ObjClass = FindObject<UClass>(ANY_PACKAGE, *ClassName);
 	if (ObjClass == nullptr)
 	{
-		LoadObject<UClass>(ObjOuter, *ClassName);
-	}
-	if (ObjClass == nullptr && ClassName.Contains(FString("_C")) == false)
-	{
 		int32 Pos = ClassName.Find(FString("'/"));
-		ClassName = ClassName.Mid(Pos);
-		ClassName.ReplaceInline(*FString("'"), *FString(""));
-		ClassName += FString("_C");
-		ObjClass = LoadObject<UClass>(ObjOuter, *ClassName);
-	}
-
-	if (ObjClass)
-	{
-		FastLuaHelper::PushObject(InL, ObjClass);
-		return 1;
-	}
-	else
-	{
-		return 0;
-	}
-}
-
-//local obj = Unreal.LuaNewObject(Owner, ClassName, ObjectName[option])
-int FastLuaHelper::LuaNewObject(lua_State* InL)
-{
-	int ParamNum = lua_gettop(InL);
-	if (ParamNum < 2)
-	{
-		//error
-		return 0;
-	}
-
-	UObject* ObjOuter = nullptr;
-	FLuaObjectWrapper* OwnerWrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
-	if (OwnerWrapper && OwnerWrapper->WrapperType == ELuaUnrealWrapperType::Object)
-	{
-		ObjOuter = OwnerWrapper->ObjInst.Get();
-	}
-	else
-	{
-		return 0;
-	}
-
-	FString ClassName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
-
-	FString ObjName = UTF8_TO_TCHAR(lua_tostring(InL, 3));
-	UClass* ObjClass = FindObject<UClass>(ANY_PACKAGE, *ClassName);
-	if (ObjClass == nullptr)
-	{
-		LoadObject<UClass>(ObjOuter, *ClassName);
-	}
-
-	if (ObjClass == nullptr && ClassName.Contains(FString("_C")) == false)
-	{
-		int32 Pos = ClassName.Find(FString("'/"));
-		if (Pos > 0)
+		if (Pos > 1)
 		{
 			ClassName = ClassName.Mid(Pos);
 			ClassName.ReplaceInline(*FString("'"), *FString(""));
-			ClassName += FString("_C");
-			ObjClass = LoadObject<UClass>(ObjOuter, *ClassName);
+			if (!ClassName.EndsWith(FString("_C"), ESearchCase::CaseSensitive))
+			{
+				ClassName += FString("_C");
+			}
 		}
+
+		LoadObject<UClass>(ObjOuter, *ClassName);
+	}
+	
+	FastLuaHelper::PushObject(InL, ObjClass);
+	return 1;
+
+}
+
+//local obj = Unreal.LuaNewObject(Owner, Class, ObjectName[option])
+int FastLuaHelper::LuaNewObject(lua_State* InL)
+{
+	UObject* ObjOuter = nullptr;
+	FLuaObjectWrapper* OwnerWrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
+	if (OwnerWrapper && OwnerWrapper->WrapperType == ELuaUnrealWrapperType::Object)
+	{
+		ObjOuter = OwnerWrapper->ObjInst.Get();
+	}
+
+	UClass* ObjClass = nullptr;
+	FLuaObjectWrapper* ClassWrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 2);
+	if (ClassWrapper && ClassWrapper->WrapperType == ELuaUnrealWrapperType::Object)
+	{
+		ObjClass = Cast<UClass>(ClassWrapper->ObjInst.Get());
 	}
 
 	if (ObjClass == nullptr)
@@ -929,11 +895,8 @@ int FastLuaHelper::LuaNewObject(lua_State* InL)
 		return 0;
 	}
 
+	FString ObjName = UTF8_TO_TCHAR(lua_tostring(InL, 3));
 	UObject* NewObj = NewObject<UObject>(ObjOuter, ObjClass, FName(*ObjName));
-	if (NewObj == nullptr)
-	{
-		return 0;
-	}
 
 	FastLuaHelper::PushObject(InL, NewObj);
 	return 1;
@@ -1252,7 +1215,8 @@ int FastLuaHelper::StructGC(lua_State* InL)
 {
 	FLuaStructWrapper* StructWrapper = (FLuaStructWrapper*)lua_touserdata(InL, -1);
 
-	if (StructWrapper && StructWrapper->StructInst && StructWrapper->WrapperType == ELuaUnrealWrapperType::Struct)
+	if (StructWrapper && StructWrapper->StructInst && StructWrapper->WrapperType == ELuaUnrealWrapperType::Struct 
+		&& (StructWrapper->StructType->StructFlags & EStructFlags::STRUCT_IsPlainOldData) == 0)
 	{
 		StructWrapper->StructType->DestroyStruct(StructWrapper->StructInst);
 		FMemory::Free(StructWrapper->StructInst);
@@ -1414,8 +1378,11 @@ bool FastLuaHelper::RegisterStructMetatable(lua_State* InL, const UScriptStruct*
 			lua_pushvalue(InL, -1);
 			lua_setfield(InL, -2, "__index");
 
-			lua_pushcfunction(InL, FastLuaHelper::StructGC);
-			lua_setfield(InL, -2, "__gc");
+			if ((InStruct->StructFlags & EStructFlags::STRUCT_IsPlainOldData) == 0)
+			{
+				lua_pushcfunction(InL, FastLuaHelper::StructGC);
+				lua_setfield(InL, -2, "__gc");
+			}
 
 			UScriptStruct* SuperStruct = Cast<UScriptStruct>(InStruct->GetSuperStruct());
 			while (SuperStruct)
