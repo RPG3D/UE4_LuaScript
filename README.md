@@ -1,7 +1,10 @@
 # LuaScript
 Simple Is Power, both Runtime refelection & auto generate static bind code are supported!
+
 note: add -FastLua to Visual Studio Command-Line, then F5, the static bind code will generated 
+
 note2: this is new version(Unreal 4.25); for 4.24, look at older branch:REL_4.24
+
 ignore generated code in version control!
 git example:
 
