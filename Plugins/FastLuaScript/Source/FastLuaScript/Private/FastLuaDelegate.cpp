@@ -7,17 +7,65 @@
 #include "FastLuaUnrealWrapper.h"
 #include "FastLuaStat.h"
 
+bool UFastLuaDelegate::BindLuaFunction(lua_State* InL, uint32 InStackIndex)
+{
+	FastLuaUnrealWrapper::OnLuaUnrealReset.Remove(OnLuaResetHandle);
+	OnLuaResetHandle = FastLuaUnrealWrapper::OnLuaUnrealReset.AddUObject(this, &UFastLuaDelegate::HandleLuaUnrealReset);
+
+	LuaState = InL;
+	//ref function first
+	if (lua_isfunction(InL, InStackIndex))
+	{
+		lua_pushvalue(InL, InStackIndex);
+		LuaFunctionID = luaL_ref(InL, LUA_REGISTRYINDEX);
+
+		if (bIsMulti)
+		{
+			FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)DelegateAddr;
+			if (MultiDelegate)
+			{
+				FScriptDelegate ScriptDelegate;
+				ScriptDelegate.BindUFunction(this, GetWrapperFunctionName());
+				MultiDelegate->Add(ScriptDelegate);
+				DelegateAddr = MultiDelegate;
+			}
+		}
+		else
+		{
+			FScriptDelegate* SingleDelegate = (FScriptDelegate*)DelegateAddr;
+			if (SingleDelegate)
+			{
+				SingleDelegate->BindUFunction(this, UFastLuaDelegate::GetWrapperFunctionName());
+				DelegateAddr = SingleDelegate;
+			}
+		}
+
+		//ref self
+		if (lua_istable(InL, InStackIndex + 1))
+		{
+			lua_pushvalue(InL, InStackIndex + 1);
+			LuaSelfID = luaL_ref(InL, LUA_REGISTRYINDEX);
+		}
+
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
 int32 UFastLuaDelegate::Unbind()
 {
-	if (bIsMulti && DelegateInst)
+	if (bIsMulti && DelegateAddr)
 	{
-		FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)DelegateInst;
-		MultiDelegate->Remove(this, UFastLuaDelegate::GetWrapperFunctionName());
+		FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)DelegateAddr;
+		MultiDelegate->Remove(this, GetWrapperFunctionName());
 	}
 
-	if (!bIsMulti && DelegateInst)
+	if (!bIsMulti && DelegateAddr)
 	{
-		FScriptDelegate* SingleDelegate = (FScriptDelegate*)DelegateInst;
+		FScriptDelegate* SingleDelegate = (FScriptDelegate*)DelegateAddr;
 		SingleDelegate->Clear();
 	}
 
@@ -38,16 +86,58 @@ int32 UFastLuaDelegate::Unbind()
 		LuaSelfID = 0;
 	}
 
-	lua_rawgetp(LuaState, LUA_REGISTRYINDEX, LuaState);
-	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(LuaState, -1);
-	lua_pop(LuaState, 1);
 	LuaState = nullptr;
 
-	LuaWrapper->DelegateCallLuaList.Remove(this);
-
-	this->RemoveFromRoot();
-
 	return 0;
+}
+
+void UFastLuaDelegate::InitFromUFunction(UFunction* InFunction)
+{
+	if (bIsMulti)
+	{
+		DelegateAddr = (uint8*)FMemory::Malloc(sizeof(FMulticastScriptDelegate));
+		new(DelegateAddr) FMulticastScriptDelegate();
+	}
+	else
+	{
+		DelegateAddr = (uint8*)FMemory::Malloc(sizeof(FScriptDelegate));
+		new(DelegateAddr) FScriptDelegate();
+	}
+
+	bIsUserDefined = true;
+}
+
+void UFastLuaDelegate::BeginDestroy()
+{
+	Super::BeginDestroy();
+
+	Unbind();
+
+	if (!bIsUserDefined)
+	{
+		return;
+	}
+
+	if (bIsMulti && DelegateAddr)
+	{
+		FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)DelegateAddr;
+		if (MultiDelegate)
+		{
+			MultiDelegate->~FMulticastScriptDelegate();
+		}
+	}
+
+	if (!bIsMulti && DelegateAddr)
+	{
+		FScriptDelegate* SingleDelegate = (FScriptDelegate*)DelegateAddr;
+		if (SingleDelegate)
+		{
+			SingleDelegate->~FScriptDelegate();
+		}
+	}
+
+	FMemory::Free(DelegateAddr);
+	DelegateAddr = nullptr;
 }
 
 void UFastLuaDelegate::ProcessEvent(UFunction* InFunction, void* Parms)
@@ -66,11 +156,11 @@ void UFastLuaDelegate::ProcessEvent(UFunction* InFunction, void* Parms)
 		++ParamsNum;
 	}
 
-	UProperty* ReturnParam = nullptr;
-	for (TFieldIterator<UProperty> It(FunctionSignature); It; ++It)
+	FProperty* ReturnParam = nullptr;
+	for (TFieldIterator<FProperty> It(FunctionSignature); It; ++It)
 	{
 		//get function return Param
-		UProperty* CurrentParam = *It;
+		FProperty* CurrentParam = *It;
 		if (CurrentParam->HasAnyPropertyFlags(CPF_ReturnParm))
 		{
 			ReturnParam = CurrentParam;
@@ -78,7 +168,7 @@ void UFastLuaDelegate::ProcessEvent(UFunction* InFunction, void* Parms)
 		else
 		{
 			//set params for lua function
-			FastLuaHelper::PushProperty(LuaState, CurrentParam, Parms, CurrentParam->HasAnyPropertyFlags(CPF_OutParm));
+			FastLuaHelper::PushProperty(LuaState, CurrentParam, Parms, 0);
 			++ParamsNum;
 		}
 	}
@@ -93,6 +183,6 @@ void UFastLuaDelegate::ProcessEvent(UFunction* InFunction, void* Parms)
 	if (ReturnParam)
 	{
 		//get function return Value, in common
-		FastLuaHelper::FetchProperty(LuaState, ReturnParam, Parms);
+		FastLuaHelper::FetchProperty(LuaState, ReturnParam, Parms, -1);
 	}
 }

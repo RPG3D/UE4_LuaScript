@@ -1,13 +1,13 @@
 # LuaScript
 Simple Is Power, both Runtime refelection & auto generate static bind code are supported!
 note: add -FastLua to Visual Studio Command-Line, then F5, the static bind code will generated 
-
+note2: this is new version(Unreal 4.25); for 4.24, look at older branch:REL_4.24
 ignore generated code in version control!
 git example:
 
-    Plugins/FastLuaScript/Source/FastLuaScript/Generated/*
+    Source/UE4_LuaScript/GeneratedLua/*
 
-modify the Plugins/FastLuaScript/Config/ModuleToExport.txt to your game modules
+modify the /Config/ModuleToExport.txt to your engine/game modules
 
 ## about
   LuaScript is unreal reflection based Lua API for UE4. All BlueprintCallable function & All UPROPERTY property & All Dynamic Delegate can be access in Lua.
@@ -35,15 +35,15 @@ modify the Plugins/FastLuaScript/Config/ModuleToExport.txt to your game modules
      
     local MyBtn = MyUMGHelper:FindWidgetInUMG(DebugUIInstance, "TestBtn")
     --param is: lua function, lua table[option]
-    MyBtn:GetOnClicked():Bind(GameUIHandler.OnStartGame, GameUIHandler)
+    MyBtn.OnClicked:Bind(GameUIHandler.OnStartGame, GameUIHandler)
     
  for struct 
  
     KismetMathLibrary = KismetMathLibrary or Unreal.LuaGetUnrealCDO("KismetMathLibrary")
     local TestVector = KismetMathLibrary:MakeVector(123, 444, 23)
-	  print(TestVector:GetY())
-	  TestVector:SetY(41241)
-	  print(TestVector:GetY())
+	  print(TestVector.Y)
+	  TestVector.Y = 41241
+	  print(TestVector.Y)
 	  
     or:(not Hight Performance!, but useful when no c++ function:Make_SomeStruct())
     local TestVec = Unreal.LuaNewStruct("Vector")

@@ -3,16 +3,14 @@
 #include "XQCodeGenerator.h"
 #include "Modules/ModuleManager.h"
 
-#include "ModuleManager.h"
-
 
 #if WITH_EDITOR
 
 #include "Framework/Commands/Commands.h"
-#include "CoreStyle.h"
-#include "UICommandList.h"
+#include "Styling/CoreStyle.h"
+#include "Framework/Commands/UICommandList.h"
 #include "LevelEditor.h"
-#include "MultiBoxBuilder.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
 
 #include "Interfaces/IMainFrameModule.h"
 
@@ -102,11 +100,28 @@ void FXQCodeGeneratorModule::ShutdownModule()
 void FXQCodeGeneratorModule::HandleGenerateLua()
 {
 #if WITH_EDITOR
-	GenerateLua Inst;
-	Inst.InitConfig();
-	Inst.GeneratedCode();
 
 	FString Cmd = FCommandLine::Get();
+
+	GenerateLua Inst;
+	Inst.InitConfig();
+
+	FString GenerateOneClass;
+	FParse::Value(*Cmd, *FString("-OneClass="), GenerateOneClass, true);
+	if (GenerateOneClass.IsEmpty())
+	{
+		Inst.GeneratedCode();
+	}
+	else
+	{
+		UStruct* Cls = FindObject<UStruct>(ANY_PACKAGE, *GenerateOneClass);
+		if (UClass* IsCls = Cast<UClass>(Cls))
+		{
+			Inst.GenerateCodeForClass(IsCls);
+		}
+		
+	}
+
 	if (Cmd.Contains(FString("-FastLua"), ESearchCase::IgnoreCase))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Generate lua code completed!, editor is exiting..."));

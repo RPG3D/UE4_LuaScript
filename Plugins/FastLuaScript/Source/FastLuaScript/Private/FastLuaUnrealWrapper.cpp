@@ -1,16 +1,27 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "FastLuaUnrealWrapper.h"
-#include "Package.h"
 #include "lua/lua.hpp"
 #include "Engine/GameInstance.h"
-#include "UObjectIterator.h"
-#include "Paths.h"
-#include "PlatformFilemanager.h"
+#include "UObject/UObjectIterator.h"
+#include "Misc/Paths.h"
+#include "HAL/PlatformFilemanager.h"
 #include "UObject/StructOnScope.h"
 #include "FastLuaHelper.h"
 #include "FastLuaStat.h"
 #include "FastLuaDelegate.h"
+#include "LuaGeneratedEnum.h"
+#include "LuaGeneratedStruct.h"
+#include "LuaGeneratedClass.h"
+
+#include "LuaDelegateWrapper.h"
+#include "LuaObjectWrapper.h"
+#include "LuaStructWrapper.h"
+#include "LuaArrayWrapper.h"
+
+
+FastLuaUnrealWrapper::FOnLuaUnrealReset FastLuaUnrealWrapper::OnLuaUnrealReset;
+
 
 static int StopNewIndex(lua_State* InL)
 {
@@ -25,11 +36,22 @@ static int InitUnrealLib(lua_State* InL)
 		{"LuaGetGameInstance", FastLuaHelper::LuaGetGameInstance},
 		{"LuaLoadObject", FastLuaHelper::LuaLoadObject},
 		{"LuaLoadClass", FastLuaHelper::LuaLoadClass},
-		{"LuaGetUnrealCDO", FastLuaHelper::LuaGetUnrealCDO},
-		{"LuaNewObject", FastLuaHelper::LuaNewObject},
-		{"LuaNewStruct", FastLuaHelper::LuaNewStruct},
-		{"LuaNewDelegate", FastLuaHelper::LuaNewDelegate},
+		{"LuaGetUnrealCDO", FLuaObjectWrapper::LuaGetUnrealCDO},
+		{"LuaNewObject", FLuaObjectWrapper::LuaNewObject},
+		{"LuaNewStruct", FLuaStructWrapper::LuaNewStruct},
+
+		{"LuaNewDelegate", FLuaDelegateWrapper::LuaNewDelegate},
+
+		{"LuaNewArray", FLuaArrayWrapper::LuaArrayNew},
+
 		{"RegisterTickFunction", FastLuaHelper::RegisterTickFunction},
+
+		{"LuaGenerateEnum", ULuaGeneratedEnum::GenerateEnum},
+		{"LuaGenerateStruct", ULuaGeneratedStruct::GenerateStruct},
+		{"LuaGenerateClass", ULuaGeneratedClass::GenerateClass},
+
+		{"PrintLog", FastLuaHelper::PrintLog},
+
 		{nullptr, nullptr}
 	};
 
@@ -45,22 +67,6 @@ static int InitUnrealLib(lua_State* InL)
 	}
 
 	return 1;
-}
-
-static int RegisterRawAPI(lua_State* InL)
-{
-	lua_getglobal(InL, "_G");
-	const static luaL_Reg funcs[] =
-	{
-		{ "print", FastLuaHelper::PrintLog },
-		{ nullptr, nullptr }
-	};
-
-	luaL_setfuncs(InL, funcs, 0);
-
-	lua_pop(InL, 1);
-
-	return 0;
 }
 
 
@@ -122,10 +128,7 @@ static int RequireFromUFS(lua_State* InL)
 			lua_pushstring(InL, TCHAR_TO_UTF8(*FullFilePath));
 			if (ret != LUA_OK)
 			{
-				lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-				FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
-				lua_pop(InL, 1);
-				FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(InL, -1))), 1, LuaWrapper);
+				UE_LOG(LogTemp, Warning, TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(InL, -1)));
 			}
 
 			delete LuaFile;
@@ -136,32 +139,8 @@ static int RequireFromUFS(lua_State* InL)
 	FString MessageToPush = FString("RequireFromUFS failed: ") + FileName;
 	luaL_traceback(InL, InL, TCHAR_TO_UTF8(*MessageToPush), 1);
 
-	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
-	lua_pop(InL, 1);
-	FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(InL, -1))), 1, LuaWrapper);
+	UE_LOG(LogTemp, Warning, TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(InL, -1)));
 	return 0;
-}
-
-
-void FastLuaUnrealWrapper::InitDelegateMetatable()
-{
-	static const luaL_Reg DelegateFuncs[] =
-	{
-		{"Bind", FastLuaHelper::LuaBindDelegate},
-		{"Unbind", FastLuaHelper::LuaUnbindDelegate},
-		{"Call", FastLuaHelper::LuaCallUnrealDelegate},
-		{nullptr, nullptr},
-	};
-
-	luaL_newlib(GetLuaSate(), DelegateFuncs);
-	lua_pushvalue(GetLuaSate(), -1);
-	lua_setfield(GetLuaSate(), -2, "__index");
-
-	lua_pushcfunction(GetLuaSate(), FastLuaHelper::UserDelegateGC);
-	lua_setfield(GetLuaSate(), -2, "__gc");
-
-	DelegateMetatableIndex = luaL_ref(GetLuaSate(), LUA_REGISTRYINDEX);
 }
 
 
@@ -193,7 +172,7 @@ void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 		return;
 	}
 
-	L = lua_newstate(FastLuaHelper::LuaAlloc, this);
+	L = luaL_newstate();
 	luaL_openlibs(L);
 
 	lua_pushlightuserdata(L, this);
@@ -206,9 +185,10 @@ void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 
 	luaL_requiref(L, "Unreal", InitUnrealLib, 1);
 
-	RegisterRawAPI(L);
-
-	InitDelegateMetatable();
+	FLuaObjectWrapper::InitWrapperMetatable(L);
+	FLuaStructWrapper::InitWrapperMetatable(L);
+	FLuaDelegateWrapper::InitWrapperMetatable(L);
+	FLuaArrayWrapper::InitMetatableWrapper(L);
 
 	//set package path
 	{
@@ -236,13 +216,7 @@ void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 
 void FastLuaUnrealWrapper::Reset()
 {
-	for (int32 i = DelegateCallLuaList.Num() - 1; i >= 0; --i)
-	{
-		if (DelegateCallLuaList[i])
-		{
-			DelegateCallLuaList[i]->Unbind();
-		}
-	}
+	OnLuaUnrealReset.Broadcast(L);
 
 	if (LuaTickerHandle.IsValid())
 	{
@@ -273,8 +247,8 @@ bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 			if (Ret)
 			{
 				bTickError = true;
-				FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(L, -1))), 1, this);
-				UE_LOG(LogTemp, Warning, TEXT("Lua stoped tick!"));
+				UE_LOG(LogTemp, Warning, TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(L, -1)));
+				UE_LOG(LogTemp, Warning, TEXT("Lua stopped tick!"));
 			}
 				
 		}
@@ -285,7 +259,6 @@ bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 	return true;
 }
 
-//Lua usage: LoadMapEndedEvent:Bind("LuaBindLoadMapEnded", LuaObj, LuaFunctionName)
 int32 FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString("ApplicationMain")*/)
 {
 	//load entry lua
@@ -294,7 +267,7 @@ int32 FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString
 	if (Ret > 0)
 	{
 		FString RetString = UTF8_TO_TCHAR(lua_tostring(L, -1));
-		FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), *RetString), 1, this);
+		UE_LOG(LogTemp, Warning, TEXT("%s"), *RetString);
 	}
 	//run Main
 	Ret = lua_getglobal(L, "Main");
@@ -302,7 +275,7 @@ int32 FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString
 	if (Ret > 0)
 	{
 		FString RetString = UTF8_TO_TCHAR(lua_tostring(L, -1));
-		FastLuaHelper::LuaLog(FString::Printf(TEXT("%s"), *RetString), 1, this);
+		UE_LOG(LogTemp, Warning, TEXT("%s"), *RetString);
 	}
 
 	if (LuaTickerHandle.IsValid() == false)
@@ -316,10 +289,6 @@ int32 FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString
 
 void FastLuaUnrealWrapper::SetLuaTickFunction(int32 InFunctionIndex)
 {
-	if (InFunctionIndex == 0 && LuaTickFunctionIndex > 0)
-	{
-		luaL_unref(L, LUA_REGISTRYINDEX, LuaTickFunctionIndex);
-	}
 	LuaTickFunctionIndex = InFunctionIndex;
 }
 

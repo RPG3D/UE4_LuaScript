@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Ticker.h"
+#include "Containers/Ticker.h"
 
 struct lua_State;
 
@@ -13,6 +13,17 @@ struct lua_State;
 class FASTLUASCRIPT_API FastLuaUnrealWrapper
 {
 public:
+
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnLuaUnrealReset, lua_State*);
+
+	static FOnLuaUnrealReset OnLuaUnrealReset;
+
+public:
+
+	FString LuaStateName = FString("Unknown");
+
+	bool bStatMemory = true;
+	int32 LuaMemory = 0;
 
 	~FastLuaUnrealWrapper();
 
@@ -40,9 +51,9 @@ public:
 		return CachedGameInstance;
 	}
 
-	int32 GetDelegateMetatableIndex() const
+	void SetGameInstance(class UGameInstance* InGameInstance)
 	{
-		return DelegateMetatableIndex;
+		CachedGameInstance = InGameInstance;
 	}
 
 	//never call me from C++!
@@ -54,38 +65,24 @@ public:
 		return LuaTickFunctionIndex;
 	}
 
-	//lua UE4's delegate proxy object
-	TArray<class UFastLuaDelegate*> DelegateCallLuaList;
 protected:
 
-	void InitDelegateMetatable();
-
-	//lua has to hold a long life time Uobject, GameInstance is a right one 
+	//LUA needs to hold a long life time UObject, GameInstance may be a right one 
 	class UGameInstance* CachedGameInstance = nullptr;
-
-
-	FastLuaUnrealWrapper();
-	FastLuaUnrealWrapper(const FastLuaUnrealWrapper&) = delete;
-	FastLuaUnrealWrapper& operator=(const FastLuaUnrealWrapper&) = delete;
 
 	lua_State* L = nullptr;
 
 	FTickerDelegate LuaTickerDelegate;
 	FDelegateHandle LuaTickerHandle;
 
-	bool HandleLuaTick(float InDelta);
-
 	//reference in registry table
 	int32 LuaTickFunctionIndex = 0;
 
-	int32 DelegateMetatableIndex = 0;
-
 	bool bTickError = false;
 
-public:
-	FString LuaStateName = FString("Unknown");
+	FastLuaUnrealWrapper();
+	FastLuaUnrealWrapper(const FastLuaUnrealWrapper&) = delete;
+	FastLuaUnrealWrapper& operator=(const FastLuaUnrealWrapper&) = delete;
 
-	bool bStatMemory = true;
-	int32 LuaMemory = 0;
-
+	bool HandleLuaTick(float InDelta);
 };

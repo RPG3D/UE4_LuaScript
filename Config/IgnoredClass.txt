@@ -12,3 +12,5 @@ AtmospherePrecomputeParameters
 InteriorSettings
 QualifiedFrameTime
 Brush
+SoundClassProperties
+MeshSectionInfoMap

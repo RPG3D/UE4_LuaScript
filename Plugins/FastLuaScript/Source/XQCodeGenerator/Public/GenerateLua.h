@@ -10,24 +10,21 @@ public:
 
 	static FString GenerateFunctionBodyStr(const class UFunction* InFunction, const class UClass* InClass);
 
-	static FString GenerateGetPropertyStr(const class UProperty* InProperty, const FString& InParamName, const class UStruct* InStruct);
-
-	static FString GenerateSetPropertyStr(const class UProperty* InProperty, const FString& InParamName, const class UStruct* InStruct);
-
-
 	int32 InitConfig();
 
 	int32 GeneratedCode() const;
 
+	bool ShouldGenerateClass(const class UClass* InClass) const;
+	bool ShouldGenerateStruct(const class UScriptStruct* InStruct) const;
+	bool ShouldGenerateProperty(const class FProperty* InProp) const;
+	bool ShouldGenerateFunction(const class UFunction* InFunction) const;
+
 	int32 GenerateCodeForClass(const class UClass* InClass) const;
 
-	int32 GenerateCodeForStruct(const class UScriptStruct* InStruct) const;
+	static FString GeneratePushPropertyStr(const FProperty* InProp, const FString& InParamName);
+	static FString GenerateFetchPropertyStr(const FProperty* InProp, const FString& InParamName, int32 InStackIndex = -1, const class UStruct* InSruct = nullptr);
 
-
-	static FString GeneratePushPropertyStr(const UProperty* InProp, const FString& InParamName);
-	static FString GenerateFetchPropertyStr(const UProperty* InProp, const FString& InParamName, int32 InStackIndex = -1, const class UStruct* InSruct = nullptr);
-
-	static TArray<FString> CollectHeaderFilesReferencedByClass(const class UStruct* InClass);
+	TArray<FString> CollectHeaderFilesReferencedByClass(const class UStruct* InClass) const;
 
 protected:
 	FString CodeDirectory = FPaths::GameSourceDir() / FApp::GetProjectName() / FString("GeneratedLua");
@@ -35,7 +32,4 @@ protected:
 	TArray<FString> ModulesShouldExport;
 
 	TArray<FString> IgnoredClass;
-
-	TArray<FString> IgnoredFunctions;
-
 };

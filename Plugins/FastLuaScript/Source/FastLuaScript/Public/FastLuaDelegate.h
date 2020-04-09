@@ -12,13 +12,37 @@ struct lua_State;
  * a UObject wrapper for UE4 and Lua function
  */
 UCLASS()
-class FASTLUASCRIPT_API UFastLuaDelegate : public UObject
+class UFastLuaDelegate : public UObject
 {
 	GENERATED_BODY()
 public:
 
-	UFUNCTION(BlueprintCallable)
-		int32 Unbind();
+	bool BindLuaFunction(lua_State* InL, uint32 InStackIndex);
+	//int32 BindLuaFunctionByName(lua_State* InL, int32 InIndex);
+
+	int32 Unbind();
+
+	void InitFromUFunction(UFunction* InFunction);
+
+	bool IsBound() const
+	{
+		return LuaState && LuaFunctionID > 0;
+	}
+
+	void HandleLuaUnrealReset(lua_State* InL)
+	{
+		if (InL == LuaState)
+		{
+			Unbind();
+			RemoveFromRoot();
+			MarkPendingKill();
+		}
+	}
+protected:
+
+	virtual void BeginDestroy() override;
+
+	friend class FLuaDelegateWrapper;
 
 	//now, now conside One lua state for the plugin
 	lua_State* LuaState = nullptr;
@@ -29,12 +53,13 @@ public:
 
 	//single delegate or multi delegate
 	bool bIsMulti;
-
 	//raw delegate
-	void* DelegateInst = nullptr;
-
+	void* DelegateAddr = nullptr;
+	bool bIsUserDefined = false;
 	//the UFunction bound to this Delegate
 	const UFunction* FunctionSignature = nullptr;
+
+	FDelegateHandle OnLuaResetHandle;
 
 	UFUNCTION()
 		void TestFunction() {}
