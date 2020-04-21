@@ -69,9 +69,9 @@ public:
 
 	static void InitWrapperMetatable(lua_State* InL);
 
-	static int32 GetMetatableIndex()
+	static char* GetMetatableName()
 	{
-		return (int32)ELuaWrapperType::Delegate + 1000;
+		return "DelegateWrapper";
 	}
 
 	void* GetDelegateValueAddr()

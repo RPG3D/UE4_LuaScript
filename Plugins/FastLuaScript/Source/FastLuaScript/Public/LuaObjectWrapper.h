@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "ILuaWrapper.h"
+#include "UObject/WeakObjectPtr.h"
 
 
 /**
@@ -14,23 +15,24 @@ class FASTLUASCRIPT_API FLuaObjectWrapper : public ILuaWrapper
 public:
 	FLuaObjectWrapper(UObject* InObj)
 	{
-		ObjInst = InObj;
+		ObjectWeakPtr = InObj;
 	}
 
 	~FLuaObjectWrapper()
 	{
-		ObjInst = nullptr;
+		ObjectWeakPtr = nullptr;
 	}
 
 	UObject* GetObject()
 	{
-		return ObjInst.Get();
+		return ObjectWeakPtr.Get();
 	}
 
 	static void InitWrapperMetatable(lua_State* InL);
-	static int32 GetMetatableIndex()
+
+	static char* GetMetatableName()
 	{
-		return (int32)ELuaWrapperType::Object + 1000;
+		return "ObjectWrapper";
 	}
 
 	static UObject* FetchObject(lua_State* InL, int32 InIndex, bool IsUClass = false);
@@ -43,11 +45,14 @@ public:
 	static int LuaGetUnrealCDO(lua_State* InL);//get unreal class default object
 	static int LuaNewObject(lua_State* InL);
 
+	static int LuaLoadObject(lua_State* Inl);
+	static int LuaLoadClass(lua_State*);
+
 	static int ObjectGC(lua_State* InL);
 
 	const ELuaWrapperType WrapperType = ELuaWrapperType::Object;
 protected:
 
 	friend class FastLuaHelper;
-	TWeakObjectPtr<class UObject> ObjInst = nullptr;
+	FWeakObjectPtr ObjectWeakPtr = nullptr;
 };

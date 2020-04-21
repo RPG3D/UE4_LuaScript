@@ -21,7 +21,7 @@ int32 ULuaGeneratedEnum::GenerateEnum(struct lua_State* InL)
 	}
 
 	NewEnum = NewObject<ULuaGeneratedEnum>(GetTransientPackage(), *InEnumName, RF_Public | RF_Standalone | RF_Transient);
-	NewEnum->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
+	//NewEnum->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
 	NewEnum->AddToRoot();
 
 

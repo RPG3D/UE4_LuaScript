@@ -24,16 +24,12 @@ public:
 
 	static int32 CallUnrealFunction(lua_State* L);
 
+	static void CallLuaFunction(UObject* Context, FFrame& TheStack, RESULT_DECL);
+
+	static int HookUFunction(lua_State* InL);
+
 	static void FixClassMetatable(lua_State* InL, TArray<const UClass*> InRegistedClassList);
 
-	static int LuaGetGameInstance(lua_State* L);
-	static int LuaLoadObject(lua_State* Inl);
-	static int LuaLoadClass(lua_State*);
-
-
 	static int PrintLog(lua_State* L);
-
-
-	static int RegisterTickFunction(lua_State* InL);
 
 };

@@ -3,7 +3,6 @@
 #pragma once
 
 #include "LuaDelegateWrapper.h"
-//#include "FastLuaUnrealWrapper.h"
 #include "FastLuaDelegate.h"
 #include "FastLuaHelper.h"
 #include "lua/lua.hpp"
@@ -11,8 +10,6 @@
 
 void FLuaDelegateWrapper::InitWrapperMetatable(lua_State* InL)
 {
-	int32 MetatableIndexDelegate = GetMetatableIndex();
-
 	static const luaL_Reg GlueFuncs[] =
 	{
 		{"Bind", FLuaDelegateWrapper::LuaBindDelegate},
@@ -22,18 +19,14 @@ void FLuaDelegateWrapper::InitWrapperMetatable(lua_State* InL)
 		{nullptr, nullptr},
 	};
 
-	lua_rawgeti(InL, LUA_REGISTRYINDEX, MetatableIndexDelegate);
-	if (lua_istable(InL, -1))
-	{
-		luaL_unref(InL, LUA_REGISTRYINDEX, MetatableIndexDelegate);
-	}
-	lua_pop(InL, 1);
-
 	int32 tp = lua_gettop(InL);
-	luaL_newlib(InL, GlueFuncs);
-	lua_pushvalue(InL, -1);
-	lua_setfield(InL, -2, "__index");
-	lua_rawseti(InL, LUA_REGISTRYINDEX, MetatableIndexDelegate);
+
+	if (!luaL_newmetatable(InL, GetMetatableName()))
+	{
+		return;
+	}
+
+	luaL_setfuncs(InL, GlueFuncs, 0);
 	lua_settop(InL, tp);
 }
 
@@ -42,8 +35,7 @@ void FLuaDelegateWrapper::PushDelegate(lua_State* InL, void* InValueAddr, bool I
 	FLuaDelegateWrapper* Wrapper = (FLuaDelegateWrapper*)lua_newuserdata(InL, sizeof(FLuaDelegateWrapper));
 	new(Wrapper) FLuaDelegateWrapper(InFunction, InValueAddr, InMulti);
 
-	lua_rawgeti(InL, LUA_REGISTRYINDEX, GetMetatableIndex());
-	lua_setmetatable(InL, -2);
+	luaL_setmetatable(InL, GetMetatableName());
 }
 
 void* FLuaDelegateWrapper::FetchDelegate(lua_State* InL, int32 InIndex, bool InIsMulti /*= true*/)
@@ -112,7 +104,14 @@ int FLuaDelegateWrapper::LuaCallUnrealDelegate(lua_State* InL)
 
 	int32 ReturnNum = 0;
 	//Fill parameters
-	FStructOnScope FuncParam(SignatureFunction);
+	static const int32 FunctionParamDataSize = 1024;
+	uint8 FuncParam[FunctionParamDataSize];
+	FMemory::Memzero(FuncParam, FunctionParamDataSize);
+	if (SignatureFunction->GetPropertiesSize() > FunctionParamDataSize)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UFunction parameter data size more than 512!"));
+		return 0;
+	}
 	FProperty* ReturnProp = nullptr;
 
 	for (TFieldIterator<FProperty> It(SignatureFunction); It; ++It)
@@ -124,24 +123,24 @@ int FLuaDelegateWrapper::LuaCallUnrealDelegate(lua_State* InL)
 		}
 		else
 		{
-			FastLuaHelper::FetchProperty(InL, Prop, FuncParam.GetStructMemory(), StackTop++);
+			FastLuaHelper::FetchProperty(InL, Prop, FuncParam, StackTop++);
 		}
 	}
 
 	if (Wrapper->IsMulti())
 	{
 		FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)Wrapper->GetDelegateValueAddr();
-		MultiDelegate->ProcessMulticastDelegate<UObject>(FuncParam.GetStructMemory());
+		MultiDelegate->ProcessMulticastDelegate<UObject>(FuncParam);
 	}
 	else
 	{
 		FScriptDelegate* SingleDelegate = (FScriptDelegate*)Wrapper->GetDelegateValueAddr();
-		SingleDelegate->ProcessDelegate<UObject>(FuncParam.GetStructMemory());
+		SingleDelegate->ProcessDelegate<UObject>(FuncParam);
 	}
 
 	if (ReturnProp)
 	{
-		FastLuaHelper::PushProperty(InL, ReturnProp, FuncParam.GetStructMemory());
+		FastLuaHelper::PushProperty(InL, ReturnProp, FuncParam);
 		++ReturnNum;
 	}
 
@@ -152,7 +151,7 @@ int FLuaDelegateWrapper::LuaCallUnrealDelegate(lua_State* InL)
 			FProperty* Prop = *It;
 			if (Prop->HasAnyPropertyFlags(CPF_OutParm) && !Prop->HasAnyPropertyFlags(CPF_ConstParm))
 			{
-				FastLuaHelper::PushProperty(InL, *It, FuncParam.GetStructMemory());
+				FastLuaHelper::PushProperty(InL, *It, FuncParam);
 				++ReturnNum;
 			}
 		}

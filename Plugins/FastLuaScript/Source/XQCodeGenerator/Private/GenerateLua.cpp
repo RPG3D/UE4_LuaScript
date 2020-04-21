@@ -165,12 +165,11 @@ int32 GenerateLua::GeneratedCode() const
 		SourceStr += FString::Printf(TEXT("\tTArray<const UClass*> AllRegistedClass; \n\tUClass* TempClass = nullptr;\n\n\n"));
 		for (auto It : AllGeneratedClass)
 		{
-			//luaL_newlib(InL, Lua_Class::FuncsBindToLua);
-			//lua_rawsetp(InL, LUA_REGISTRYINDEX, (void*)FindObject<UClass>(ANY_PACKAGE, *It.Key));
-			SourceStr += FString::Printf(TEXT("\tluaL_newlib(InL, Lua_%s::FuncsBindToLua);\n"), *It.Key);
+			SourceStr += FString::Printf(TEXT("\tluaL_newmetatable(InL, \"%s\");\n"), *It.Key);
+			SourceStr += FString::Printf(TEXT("\tluaL_setfuncs(InL, Lua_%s::FuncsBindToLua, 0);\n"), *It.Key);
+			SourceStr += FString::Printf(TEXT("\tlua_pop(InL, 1);\n"));
 			SourceStr += FString::Printf(TEXT("\tTempClass = FindObject<UClass>(ANY_PACKAGE, *FString(\"%s\"));\n"), *It.Key);
-			SourceStr += FString::Printf(TEXT("\tAllRegistedClass.Add(TempClass);\n"));
-			SourceStr += FString::Printf(TEXT("\tlua_rawsetp(InL, LUA_REGISTRYINDEX, (const void*)TempClass);\n\n"));
+			SourceStr += FString::Printf(TEXT("\tAllRegistedClass.Add(TempClass);\n\n"));
 
 		}
 		SourceStr += FString("\tFastLuaHelper::FixClassMetatable(InL, AllRegistedClass);\n");

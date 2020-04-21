@@ -4,6 +4,7 @@
 #include "UObject/StructOnScope.h"
 #include "CoreUObject.h"
 #include "lua/lua.hpp"
+#include "lua/lstate.h"
 #include "FastLuaUnrealWrapper.h"
 #include "FastLuaScript.h"
 #include "FastLuaDelegate.h"
@@ -14,8 +15,10 @@
 #include "LuaObjectWrapper.h"
 #include "ILuaWrapper.h"
 #include "LuaStructWrapper.h"
-//#include "LuaArrayWrapper.h"
+#include "Kismet/GameplayStatics.h"
+#include "LuaLatentActionWrapper.h"
 
+static FName LatentPropName = FName("LatentInfo");
 
 FString FastLuaHelper::GetPropertyTypeName(const FProperty* InProp)
 {
@@ -94,6 +97,7 @@ FString FastLuaHelper::GetPropertyTypeName(const FProperty* InProp)
 	return TypeName;
 }
 
+
 void FastLuaHelper::PushProperty(lua_State* InL, const FProperty* InProp, void* InBuff, int32 InArrayElementIndex)
 {
 	if (InProp == nullptr || InBuff == nullptr)
@@ -170,7 +174,6 @@ void FastLuaHelper::PushProperty(lua_State* InL, const FProperty* InProp, void* 
 			PushProperty(InL, ArrayProp->Inner, ArrayHelper.GetRawPtr(i));
 			lua_rawseti(InL, -2, i + 1);
 		}
-		//FLuaArrayWrapper::PushScriptArray(InL, ArrayProp->Inner, (FScriptArray*)ArrayProp->ContainerPtrToValuePtr<void>(InBuff));
 	}
 	else if (const FSetProperty * SetProp = CastField<FSetProperty>(InProp))
 	{
@@ -277,15 +280,6 @@ void FastLuaHelper::FetchProperty(lua_State* InL, const FProperty* InProp, void*
 	else if (const FArrayProperty* ArrayProp = CastField<FArrayProperty>(InProp))
 	{
 		FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(InBuff));
-		/*{
-			FLuaArrayWrapper* Wrapper = FLuaArrayWrapper::FetchArrayWrapper(InL, InStackIndex);
-			ArrayHelper.Resize(Wrapper->GetElementNum());
-			for (int32 Idx = 0; Idx < Wrapper->GetElementNum(); ++Idx)
-			{
-				ArrayProp->Inner->CopySingleValue(ArrayHelper.GetRawPtr(Idx), Wrapper->GetElementAddr(Idx));
-			}
-		}*/
-
 		int32 i = 0;
 		if (lua_istable(InL, InStackIndex))
 		{
@@ -367,17 +361,16 @@ void FastLuaHelper::FetchProperty(lua_State* InL, const FProperty* InProp, void*
 	return;
 }
 
-
 int32 FastLuaHelper::CallUnrealFunction(lua_State* InL)
 {
 	//SCOPE_CYCLE_COUNTER(STAT_LuaCallBP);
 	UFunction* Func = (UFunction*)lua_touserdata(InL, lua_upvalueindex(1));
 	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
 	UObject* Obj = nullptr;
-	//TODO
-	//if (Wrapper && Wrapper->GetWrapperType() == ELuaWrapperType::Object)
+
+	if (Wrapper && Wrapper->WrapperType == ELuaWrapperType::Object)
 	{
-		Obj = Wrapper->ObjInst.Get();
+		Obj = Wrapper->GetObject();
 	}
 	int32 StackTop = 2;
 	if (Obj == nullptr)
@@ -393,8 +386,17 @@ int32 FastLuaHelper::CallUnrealFunction(lua_State* InL)
 	}
 	else
 	{
-		FStructOnScope FuncParam(Func);
+		static const int32 FunctionParamDataSize = 1024;
+		uint8 FuncParam[FunctionParamDataSize];
+		FMemory::Memzero(FuncParam, FunctionParamDataSize);
+		if (Func->GetPropertiesSize() > FunctionParamDataSize)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("UFunction parameter data size more than 512!"));
+			return 0;
+		}
 		FProperty* ReturnProp = nullptr;
+
+		FStructProperty* LatentProp = nullptr;
 
 		for (TFieldIterator<FProperty> It(Func); It; ++It)
 		{
@@ -405,16 +407,44 @@ int32 FastLuaHelper::CallUnrealFunction(lua_State* InL)
 			}
 			else
 			{
-				FastLuaHelper::FetchProperty(InL, Prop, FuncParam.GetStructMemory(), StackTop++);
+				FastLuaHelper::FetchProperty(InL, Prop, FuncParam, StackTop++);
+
+				if (Prop->GetFName() == LatentPropName)
+				{
+					LatentProp = (FStructProperty*)Prop;
+				}
 			}
 		}
 
-		Obj->ProcessEvent(Func, FuncParam.GetStructMemory());
+		//fix up FLatentActionInfo parameter of function
+		if (LatentProp)
+		{
+			if (lua_pushthread(InL) == 1)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("never use latent in main thread!"));
+				return 0;
+			}
+
+			FLatentActionInfo LatentInfo;
+			ULuaLatentActionWrapper* LatentWrapper = NewObject<ULuaLatentActionWrapper>(GetTransientPackage());
+			LatentWrapper->AddToRoot();
+			LatentInfo.CallbackTarget = LatentWrapper;
+			LatentWrapper->MainThread = InL->l_G->mainthread;
+			LatentWrapper->WorkerThread = InL;
+			LatentInfo.ExecutionFunction = LatentWrapper->GetWrapperFunctionName();
+			//store current worker thread.
+			LatentInfo.Linkage = luaL_ref(InL, LUA_REGISTRYINDEX);
+			LatentInfo.UUID = GetTypeHash(FGuid::NewGuid());
+
+			LatentProp->CopySingleValue(LatentProp->ContainerPtrToValuePtr<void>(FuncParam), &LatentInfo);
+		}
+
+		Obj->ProcessEvent(Func, FuncParam);
 
 		int32 ReturnNum = 0;
 		if (ReturnProp)
 		{
-			FastLuaHelper::PushProperty(InL, ReturnProp, FuncParam.GetStructMemory());
+			FastLuaHelper::PushProperty(InL, ReturnProp, FuncParam);
 			++ReturnNum;
 		}
 
@@ -425,41 +455,217 @@ int32 FastLuaHelper::CallUnrealFunction(lua_State* InL)
 				FProperty* Prop = *It;
 				if (Prop->HasAnyPropertyFlags(CPF_OutParm) && !Prop->HasAnyPropertyFlags(CPF_ConstParm))
 				{
-					FastLuaHelper::PushProperty(InL, *It, FuncParam.GetStructMemory());
+					FastLuaHelper::PushProperty(InL, *It, FuncParam);
 					++ReturnNum;
 				}
 			}
 		}
-
-		return ReturnNum;
+		if (LatentProp == nullptr)
+		{
+			return ReturnNum;
+		}
+		else
+		{
+			return lua_yield(InL, ReturnNum);
+		}
 	}
 
 }
 
+void FastLuaHelper::CallLuaFunction(UObject* Context, FFrame& TheStack, RESULT_DECL)
+{
+	UClass* TmpClass = Context->GetClass();
+
+	UGameInstance* GI = UGameplayStatics::GetGameInstance(Context);
+
+	FastLuaUnrealWrapper* LuaUnreaWrapper = *FastLuaUnrealWrapper::LuaStateMap.Find(GI);
+	lua_State* LuaState = LuaUnreaWrapper ? LuaUnreaWrapper->GetLuaSate() : nullptr;
+	if (LuaState == nullptr)
+	{
+		return;
+	}
+	int32 tp = lua_gettop(LuaState);
+	luaL_getmetatable(LuaState, "HookUE");
+	if (lua_istable(LuaState, -1) == false)
+	{
+		return;
+	}
+	lua_rawgetp(LuaState, -1, TheStack.Node);
+	if (lua_isfunction(LuaState, -1))
+	{
+		int32 ParamsNum = 0;
+		FProperty* ReturnParam = nullptr;
+		//store param from UE script VM stack
+		static const int32 FunctionParamDataSize = 1024;
+		uint8 FuncParam[FunctionParamDataSize];
+		FMemory::Memzero(FuncParam, FunctionParamDataSize);
+		if (TheStack.Node->GetPropertiesSize() > FunctionParamDataSize)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("UFunction parameter data size more than 512!"));
+		}
+		//push self
+		FLuaObjectWrapper::PushObject(LuaState, Context);
+		++ParamsNum;
+
+		for (TFieldIterator<FProperty> It(TheStack.Node); It; ++It)
+		{
+			//get function return Param
+			FProperty* CurrentParam = *It;
+			void* LocalValue = CurrentParam->ContainerPtrToValuePtr<void>(FuncParam);
+			TheStack.StepCompiledIn<FProperty>(LocalValue);
+			if (CurrentParam->HasAnyPropertyFlags(CPF_ReturnParm))
+			{
+				ReturnParam = CurrentParam;
+			}
+			else
+			{
+				//set params for lua function
+				FastLuaHelper::PushProperty(LuaState, CurrentParam, FuncParam, 0);
+				++ParamsNum;
+			}
+		}
+
+		//call lua function
+		int32 CallRet = lua_pcall(LuaState, ParamsNum, ReturnParam ? 1 : 0, 0);
+		if (CallRet)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(LuaState, -1)));
+		}
+
+		if (ReturnParam)
+		{
+			//get function return Value, in common
+			FastLuaHelper::FetchProperty(LuaState, ReturnParam, FuncParam, -1);
+		}
+	}
+
+	lua_settop(LuaState, tp);
+}
+
+static void UnhookAllUFunction(lua_State* InL)
+{
+	if (InL == nullptr)
+	{
+		return;
+	}
+
+	luaL_getmetatable(InL, "HookUE");
+	if (lua_istable(InL, -1) == false)
+	{
+		return;
+	}
+
+	lua_pushnil(InL);
+	while (lua_next(InL, -2))
+	{
+		UFunction* Func = (UFunction*)lua_touserdata(InL, -2);
+		if (Func)
+		{
+			Func->SetNativeFunc(nullptr);
+		}
+		if (Func && Func->HasAnyFlags(RF_Transient))
+		{
+			Func->GetOwnerClass()->RemoveFunctionFromFunctionMap(Func);
+			Func->MarkPendingKill();
+
+			lua_pushnil(InL);
+			lua_rawsetp(InL, -4, Func);
+		}
+
+		lua_pop(InL, 1);
+	}
+}
+
+
+int FastLuaHelper::HookUFunction(lua_State* InL)
+{
+	static bool bIsBindToReset = false;
+	if (bIsBindToReset == false)
+	{
+		FastLuaUnrealWrapper::OnLuaUnrealReset.AddLambda([InL](lua_State* InLua)
+			{
+				if (InL != InLua)
+				{
+					return;
+				}
+				UnhookAllUFunction(InLua);
+			});
+
+		bIsBindToReset = true;
+	}
+
+	luaL_newmetatable(InL, "HookUE");
+	int32 HookTableIndex = lua_gettop(InL);
+
+	UClass* Cls = FLuaObjectWrapper::FetchObject(InL, 1, false)->GetClass();
+	FString ClsName = Cls->GetName();
+	const char* ClsName_C = TCHAR_TO_UTF8(*ClsName);
+	{
+		lua_getglobal(InL, "require");
+		lua_pushstring(InL, ClsName_C);
+		int32 status = lua_pcall(InL, 1, 1, 0);  /* call 'require(name)' */
+		if (status != LUA_OK)
+		{
+			FString ErrStr = UTF8_TO_TCHAR(lua_tostring(InL, -1));
+			UE_LOG(LogTemp, Warning, TEXT("%s"), *ErrStr);
+		}
+	}
+
+	if (!lua_istable(InL, -1))
+	{
+		lua_pushnil(InL);
+		return 1;
+	}
+
+	lua_pushnil(InL);
+	while (lua_next(InL, -2))
+	{
+		FString FuncName = lua_tostring(InL, -2);
+		UFunction* FoundFunc = Cls->FindFunctionByName(*FuncName, EIncludeSuperFlag::ExcludeSuper);
+		if (FoundFunc)
+		{
+			FoundFunc->FunctionFlags |= FUNC_Native;
+			FoundFunc->SetNativeFunc(FastLuaHelper::CallLuaFunction);
+		}
+		else
+		{
+			UFunction* FoundSuperFunc = Cls->FindFunctionByName(*FuncName, EIncludeSuperFlag::IncludeSuper);
+			if (FoundSuperFunc)
+			{
+				FoundFunc = Cast<UFunction>(StaticDuplicateObject(FoundSuperFunc, Cls, *FuncName, RF_Public | RF_Transient));
+				FoundFunc->FunctionFlags |= FUNC_Native;
+				FoundFunc->SetNativeFunc(FastLuaHelper::CallLuaFunction);
+				Cls->AddFunctionToFunctionMap(FoundFunc, *FuncName);
+				FoundFunc->StaticLink(true);
+			}
+		}
+
+		if (FoundFunc)
+		{
+			lua_rawsetp(InL, HookTableIndex, FoundFunc);
+		}
+		else
+		{
+			lua_pop(InL, 1);
+		}
+	}
+
+	lua_pushboolean(InL, 1);
+	return 1;
+}
 
 void FastLuaHelper::FixClassMetatable(lua_State* InL, TArray<const UClass*> InRegistedClassList)
 {
 	for (int32 i = 0; i < InRegistedClassList.Num(); ++i)
 	{
-		//fix metatable.__index = metatable
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, (const void*)InRegistedClassList[i]);
-		if (lua_istable(InL, -1))
-		{
-			lua_pushvalue(InL, -1);
-			lua_setfield(InL, -2, "__index");
-		}
-		else
-		{
-			//ERROR!!!
-			lua_pop(InL, 1);
-			continue;
-		}
-
+		FString ClassName = InRegistedClassList[i]->GetName();
+		luaL_getmetatable(InL, TCHAR_TO_UTF8(*ClassName));
+		
 		UClass* SuperClass = InRegistedClassList[i]->GetSuperClass();
 		if (SuperClass)
 		{
-			lua_rawgetp(InL, LUA_REGISTRYINDEX, (const void*)SuperClass);
-			if (lua_istable(InL, -1))
+			FString SuperClassName = SuperClass->GetName();
+			if (luaL_getmetatable(InL, TCHAR_TO_UTF8(*ClassName)))
 			{
 				lua_setmetatable(InL, -2);
 			}
@@ -467,85 +673,17 @@ void FastLuaHelper::FixClassMetatable(lua_State* InL, TArray<const UClass*> InRe
 			{
 				lua_pop(InL, 1);
 				//当前类的父类没有被导出
-				lua_rawgeti(InL, LUA_REGISTRYINDEX, FLuaObjectWrapper::GetMetatableIndex());
-				lua_setmetatable(InL, -2);
+				luaL_setmetatable(InL, FLuaObjectWrapper::GetMetatableName());
 			}
 		}
 		else
 		{
 			//当前类没有父类，理论上只有UObject
-			lua_rawgeti(InL, LUA_REGISTRYINDEX, FLuaObjectWrapper::GetMetatableIndex());
-			lua_setmetatable(InL, -2);
+			luaL_setmetatable(InL, FLuaObjectWrapper::GetMetatableName());
 		}
 
 		lua_pop(InL, 1);
 	}
-}
-
-int FastLuaHelper::LuaGetGameInstance(lua_State* InL)
-{
-	lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-	FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
-	lua_pop(InL, 1);
-	UGameInstance* TmpGameInstance = LuaWrapper->GetGameInstance();
-	if (TmpGameInstance == nullptr)
-	{
-		TmpGameInstance = GEngine->GetWorld()->GetGameInstance();
-	}
-	FLuaObjectWrapper::PushObject(InL, (UObject*)TmpGameInstance);
-	return 1;
-}
-
-//local obj = Unreal.LuaLoadObject(Owner, ObjectPath)
-int FastLuaHelper::LuaLoadObject(lua_State* InL)
-{
-	FString ObjectPath = UTF8_TO_TCHAR(lua_tostring(InL, 2));
-
-	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
-	UObject* Owner = (Wrapper && Wrapper->WrapperType == ELuaWrapperType::Object) ? Wrapper->GetObject() : nullptr;
-	UObject* LoadedObj = FindObject<UObject>(ANY_PACKAGE, *ObjectPath);
-	if (LoadedObj == nullptr)
-	{
-		LoadedObj = LoadObject<UObject>(Owner, *ObjectPath);
-	}
-	
-	FLuaObjectWrapper::PushObject(InL, LoadedObj);
-
-	return 1;
-}
-
-//local cls = Unreal.LuaLoadClass(Owner, ClassPath)
-int FastLuaHelper::LuaLoadClass(lua_State* InL)
-{
-	UObject* ObjOuter = nullptr;
-	FLuaObjectWrapper* OwnerWrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
-	if (OwnerWrapper && OwnerWrapper->WrapperType == ELuaWrapperType::Object)
-	{
-		ObjOuter = OwnerWrapper->ObjInst.Get();
-	}
-
-	FString ClassName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
-
-	UClass* ObjClass = FindObject<UClass>(ANY_PACKAGE, *ClassName);
-	if (ObjClass == nullptr)
-	{
-		int32 Pos = ClassName.Find(FString("'/"));
-		if (Pos > 1)
-		{
-			ClassName = ClassName.Mid(Pos);
-			ClassName.ReplaceInline(*FString("'"), *FString(""));
-			if (!ClassName.EndsWith(FString("_C"), ESearchCase::CaseSensitive))
-			{
-				ClassName += FString("_C");
-			}
-		}
-
-		LoadObject<UClass>(ObjOuter, *ClassName);
-	}
-	
-	FLuaObjectWrapper::PushObject(InL, ObjClass);
-	return 1;
-
 }
 
 
@@ -582,35 +720,3 @@ int FastLuaHelper::PrintLog(lua_State* L)
 	return 0;
 }
 
-
-int FastLuaHelper::RegisterTickFunction(lua_State* InL)
-{
-
-	if (InL && lua_isfunction(InL, 1))
-	{
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-		FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
-		lua_pop(InL, 1);
-
-		int32 RefIndex = luaL_ref(InL, LUA_REGISTRYINDEX);
-		if (RefIndex && LuaWrapper)
-		{
-			LuaWrapper->SetLuaTickFunction(RefIndex);
-		}
-
-	}
-	else
-	{
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, InL);
-		FastLuaUnrealWrapper* LuaWrapper = (FastLuaUnrealWrapper*)lua_touserdata(InL, -1);
-		lua_pop(InL, 1);
-		if (LuaWrapper->GetLuaTickFunction() > 0)
-		{
-			luaL_unref(InL, LUA_REGISTRYINDEX, LuaWrapper->GetLuaTickFunction());
-		}
-		LuaWrapper->SetLuaTickFunction(0);
-	}
-
-	lua_pushboolean(InL, true);
-	return 1;
-}

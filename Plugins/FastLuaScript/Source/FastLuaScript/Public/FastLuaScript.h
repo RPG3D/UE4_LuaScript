@@ -13,7 +13,6 @@ public:
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 
-	TSharedPtr<class FastLuaUnrealWrapper> DefaultLuaWrapper = nullptr;
 };
 
 

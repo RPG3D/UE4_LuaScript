@@ -29,9 +29,10 @@ public:
 	}
 
 	static void InitWrapperMetatable(lua_State* InL);
-	static int32 GetMetatableIndex()
+
+	static char* GetMetatableName()
 	{
-		return (int32)ELuaWrapperType::Struct + 1000;
+		return "StructWrapper";
 	}
 
 	static void* FetchStruct(lua_State* InL, int32 InIndex, int32 InDesiredSize);

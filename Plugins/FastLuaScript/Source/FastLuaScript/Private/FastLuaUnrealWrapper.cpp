@@ -9,19 +9,20 @@
 #include "UObject/StructOnScope.h"
 #include "FastLuaHelper.h"
 #include "FastLuaStat.h"
-#include "FastLuaDelegate.h"
-#include "LuaGeneratedEnum.h"
-#include "LuaGeneratedStruct.h"
-#include "LuaGeneratedClass.h"
+
+//#include "LuaGeneratedEnum.h"
+//#include "LuaGeneratedStruct.h"
+//#include "LuaGeneratedClass.h"
 
 #include "LuaDelegateWrapper.h"
 #include "LuaObjectWrapper.h"
 #include "LuaStructWrapper.h"
-#include "LuaArrayWrapper.h"
+#include "LuaLatentActionWrapper.h"
 
 
 FastLuaUnrealWrapper::FOnLuaUnrealReset FastLuaUnrealWrapper::OnLuaUnrealReset;
 
+TMap<UObject*, FastLuaUnrealWrapper*> FastLuaUnrealWrapper::LuaStateMap;
 
 static int StopNewIndex(lua_State* InL)
 {
@@ -33,22 +34,20 @@ static int InitUnrealLib(lua_State* InL)
 {
 	const static luaL_Reg funcs[] =
 	{
-		{"LuaGetGameInstance", FastLuaHelper::LuaGetGameInstance},
-		{"LuaLoadObject", FastLuaHelper::LuaLoadObject},
-		{"LuaLoadClass", FastLuaHelper::LuaLoadClass},
+
+		{"LuaLoadObject", FLuaObjectWrapper::LuaLoadObject},
+		{"LuaLoadClass", FLuaObjectWrapper::LuaLoadClass},
 		{"LuaGetUnrealCDO", FLuaObjectWrapper::LuaGetUnrealCDO},
 		{"LuaNewObject", FLuaObjectWrapper::LuaNewObject},
 		{"LuaNewStruct", FLuaStructWrapper::LuaNewStruct},
 
 		{"LuaNewDelegate", FLuaDelegateWrapper::LuaNewDelegate},
 
-		{"LuaNewArray", FLuaArrayWrapper::LuaArrayNew},
+		{"LuaHookUFunction", FastLuaHelper::HookUFunction},
 
-		{"RegisterTickFunction", FastLuaHelper::RegisterTickFunction},
-
-		{"LuaGenerateEnum", ULuaGeneratedEnum::GenerateEnum},
+		/*{"LuaGenerateEnum", ULuaGeneratedEnum::GenerateEnum},
 		{"LuaGenerateStruct", ULuaGeneratedStruct::GenerateStruct},
-		{"LuaGenerateClass", ULuaGeneratedClass::GenerateClass},
+		{"LuaGenerateClass", ULuaGeneratedClass::GenerateClass},*/
 
 		{"PrintLog", FastLuaHelper::PrintLog},
 
@@ -146,6 +145,8 @@ static int RequireFromUFS(lua_State* InL)
 
 FastLuaUnrealWrapper::FastLuaUnrealWrapper()
 {
+	static int32 TmpIdx = 0;
+	InstanceIndex = TmpIdx++;
 }
 
 FastLuaUnrealWrapper::~FastLuaUnrealWrapper()
@@ -160,7 +161,14 @@ TSharedPtr<FastLuaUnrealWrapper> FastLuaUnrealWrapper::Create(class UGameInstanc
 	{
 		Inst->LuaStateName = InName;
 	}
+
 	Inst->Init(InGameInstance);
+
+	if (InGameInstance)
+	{
+		Inst->CachedGameInstance = InGameInstance;
+		LuaStateMap.Add(InGameInstance, Inst.Get());
+	}
 
 	return Inst;
 }
@@ -175,20 +183,14 @@ void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 	L = luaL_newstate();
 	luaL_openlibs(L);
 
-	lua_pushlightuserdata(L, this);
-	lua_rawsetp(L, LUA_REGISTRYINDEX, L);
-
-	if (InGameInstance)
-	{
-		CachedGameInstance = InGameInstance;
-	}
+	FLuaObjectWrapper::PushObject(L, InGameInstance);
+	lua_setglobal(L, "GameInstance");
 
 	luaL_requiref(L, "Unreal", InitUnrealLib, 1);
 
 	FLuaObjectWrapper::InitWrapperMetatable(L);
 	FLuaStructWrapper::InitWrapperMetatable(L);
 	FLuaDelegateWrapper::InitWrapperMetatable(L);
-	FLuaArrayWrapper::InitMetatableWrapper(L);
 
 	//set package path
 	{
@@ -218,6 +220,8 @@ void FastLuaUnrealWrapper::Reset()
 {
 	OnLuaUnrealReset.Broadcast(L);
 
+	LuaStateMap.Remove(CachedGameInstance.Get());
+
 	if (LuaTickerHandle.IsValid())
 	{
 		FTicker::GetCoreTicker().RemoveTicker(LuaTickerHandle);
@@ -236,10 +240,10 @@ void FastLuaUnrealWrapper::Reset()
 bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 {
 	SCOPE_CYCLE_COUNTER(STAT_LuaTick);
-	if (!bTickError && L && LuaTickFunctionIndex)
+	if (!bTickError && L)
 	{
 		int32 tp = lua_gettop(L);
-		int32 ret = lua_rawgeti(L, LUA_REGISTRYINDEX, LuaTickFunctionIndex);
+		int32 ret = lua_getglobal(L, "LuaTick");
 		if (lua_isfunction(L, -1))
 		{
 			lua_pushnumber(L, InDeltaTime);
@@ -284,12 +288,6 @@ int32 FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString
 	}
 
 	return Ret;
-}
-
-
-void FastLuaUnrealWrapper::SetLuaTickFunction(int32 InFunctionIndex)
-{
-	LuaTickFunctionIndex = InFunctionIndex;
 }
 
 FString FastLuaUnrealWrapper::DoLuaCode(const FString& InCode)

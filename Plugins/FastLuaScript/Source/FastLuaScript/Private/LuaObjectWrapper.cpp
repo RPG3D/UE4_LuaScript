@@ -9,8 +9,6 @@
 
 void FLuaObjectWrapper::InitWrapperMetatable(lua_State* InL)
 {
-	int32 MetatableIndexClass = GetMetatableIndex();
-
 	static const luaL_Reg GlueFuncs[] =
 	{
 		{"__index", FLuaObjectWrapper::IndexInClass},
@@ -19,17 +17,15 @@ void FLuaObjectWrapper::InitWrapperMetatable(lua_State* InL)
 		{"__tostring", FLuaObjectWrapper::ObjectToString},
 		{nullptr, nullptr},
 	};
-
-	lua_rawgeti(InL, LUA_REGISTRYINDEX, MetatableIndexClass);
-	if (lua_istable(InL, -1))
-	{
-		luaL_unref(InL, LUA_REGISTRYINDEX, MetatableIndexClass);
-	}
-	lua_pop(InL, 1);
-
+	
 	int32 tp = lua_gettop(InL);
-	luaL_newlib(InL, GlueFuncs);
-	lua_rawseti(InL, LUA_REGISTRYINDEX, MetatableIndexClass);
+
+	if (!luaL_newmetatable(InL, GetMetatableName()))
+	{
+		return;
+	}
+
+	luaL_setfuncs(InL, GlueFuncs, 0);
 	lua_settop(InL, tp);
 }
 
@@ -40,7 +36,7 @@ UObject* FLuaObjectWrapper::FetchObject(lua_State* InL, int32 InIndex, bool IsUC
 	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, InIndex);
 	if (Wrapper && Wrapper->WrapperType == ELuaWrapperType::Object)
 	{
-		RetObject = Wrapper->ObjInst.Get();
+		RetObject = Wrapper->ObjectWeakPtr.Get();
 	}
 
 	if (IsUClass && RetObject)
@@ -66,26 +62,22 @@ void FLuaObjectWrapper::PushObject(lua_State* InL, UObject* InObj)
 		return;
 	}
 
+	
+	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_newuserdata(InL, sizeof(FLuaObjectWrapper));
+	new(Wrapper) FLuaObjectWrapper(InObj);
+
+	//SCOPE_CYCLE_COUNTER(STAT_FindClassMetatable);
+
+	const UClass* Class = InObj->GetClass();
+
+	if (luaL_getmetatable(InL, TCHAR_TO_UTF8(*Class->GetName())))
 	{
-		FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_newuserdata(InL, sizeof(FLuaObjectWrapper));
-		new(Wrapper) FLuaObjectWrapper(InObj);
-
-		//SCOPE_CYCLE_COUNTER(STAT_FindClassMetatable);
-
-		const UClass* Class = InObj->GetClass();
-
-		lua_rawgetp(InL, LUA_REGISTRYINDEX, Class);
-		if (lua_istable(InL, -1))
-		{
-			lua_setmetatable(InL, -2);
-		}
-		else
-		{
-			lua_pop(InL, 1);
-
-			lua_rawgeti(InL, LUA_REGISTRYINDEX, GetMetatableIndex());
-			lua_setmetatable(InL, -2);
-		}
+		lua_setmetatable(InL, -2);
+	}
+	else
+	{
+		lua_pop(InL, 1);
+		luaL_setmetatable(InL, GetMetatableName());
 	}
 }
 
@@ -98,8 +90,8 @@ int32 FLuaObjectWrapper::IndexInClass(lua_State* InL)
 	}
 
 	FString TmpName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
-	UFunction* TmpFunc = Wrapper->ObjInst->GetClass()->FindFunctionByName(*TmpName);
-	FProperty* TmpProp = TmpFunc ? nullptr : Wrapper->ObjInst->GetClass()->FindPropertyByName(*TmpName);
+	UFunction* TmpFunc = Wrapper->GetObject()->GetClass()->FindFunctionByName(*TmpName);
+	FProperty* TmpProp = TmpFunc ? nullptr : Wrapper->GetObject()->GetClass()->FindPropertyByName(*TmpName);
 
 	if (TmpFunc)
 	{
@@ -111,7 +103,7 @@ int32 FLuaObjectWrapper::IndexInClass(lua_State* InL)
 	if (TmpProp)
 	{
 		int32 TmpIndex = lua_tointeger(InL, 3);
-		FastLuaHelper::PushProperty(InL, TmpProp, Wrapper->ObjInst.Get(), TmpIndex);
+		FastLuaHelper::PushProperty(InL, TmpProp, Wrapper->ObjectWeakPtr.Get(), TmpIndex);
 		return 1;
 	}
 
@@ -127,13 +119,13 @@ int32 FLuaObjectWrapper::NewIndexInClass(lua_State* InL)
 	}
 
 	FString TmpName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
-	FProperty* TmpProp = Wrapper->ObjInst->GetClass()->FindPropertyByName(*TmpName);
+	FProperty* TmpProp = Wrapper->GetObject()->GetClass()->FindPropertyByName(*TmpName);
 	if (TmpProp == nullptr)
 	{
 		return 0;
 	}
 
-	FastLuaHelper::FetchProperty(InL, TmpProp, Wrapper->ObjInst.Get(), 3);
+	FastLuaHelper::FetchProperty(InL, TmpProp, Wrapper->ObjectWeakPtr.Get(), 3);
 
 	return 0;
 }
@@ -141,13 +133,13 @@ int32 FLuaObjectWrapper::NewIndexInClass(lua_State* InL)
 int32 FLuaObjectWrapper::ObjectToString(lua_State* InL)
 {
 	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
-	if (Wrapper == nullptr || Wrapper->WrapperType != ELuaWrapperType::Object || !Wrapper->ObjInst.IsValid())
+	if (Wrapper == nullptr || Wrapper->WrapperType != ELuaWrapperType::Object || !Wrapper->ObjectWeakPtr.IsValid())
 	{
 		lua_pushnil(InL);
 		return 1;
 	}
 
-	FString ObjName = Wrapper->ObjInst->GetName();
+	FString ObjName = Wrapper->GetObject()->GetName();
 	lua_pushstring(InL, TCHAR_TO_UTF8(*ObjName));
 	return 1;
 }
@@ -178,7 +170,7 @@ int FLuaObjectWrapper::LuaNewObject(lua_State* InL)
 	FLuaObjectWrapper* OwnerWrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
 	if (OwnerWrapper && OwnerWrapper->WrapperType == ELuaWrapperType::Object)
 	{
-		ObjOuter = OwnerWrapper->ObjInst.Get();
+		ObjOuter = OwnerWrapper->ObjectWeakPtr.Get();
 	}
 
 	UClass* ObjClass = nullptr;
@@ -186,7 +178,7 @@ int FLuaObjectWrapper::LuaNewObject(lua_State* InL)
 
 	if (ClassWrapper && ClassWrapper->WrapperType == ELuaWrapperType::Object)
 	{
-		ObjClass = Cast<UClass>(ClassWrapper->ObjInst.Get());
+		ObjClass = Cast<UClass>(ClassWrapper->ObjectWeakPtr.Get());
 	}
 
 	if (ObjClass == nullptr)
@@ -200,6 +192,43 @@ int FLuaObjectWrapper::LuaNewObject(lua_State* InL)
 	FLuaObjectWrapper::PushObject(InL, NewObj);
 	return 1;
 }
+
+
+//local obj = Unreal.LuaLoadObject(Owner, ObjectPath)
+int FLuaObjectWrapper::LuaLoadObject(lua_State* InL)
+{
+	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
+	UObject* Owner = (Wrapper && Wrapper->WrapperType == ELuaWrapperType::Object) ? Wrapper->GetObject() : nullptr;
+	
+	FString ObjectPath = UTF8_TO_TCHAR(lua_tostring(InL, 2));
+
+	UObject* LoadedObj = LoadObject<UObject>(Owner ? Owner : ANY_PACKAGE, *ObjectPath);
+
+	PushObject(InL, LoadedObj);
+
+	return 1;
+}
+
+//local cls = Unreal.LuaLoadClass(Owner, ClassPath)
+int FLuaObjectWrapper::LuaLoadClass(lua_State* InL)
+{
+	FLuaObjectWrapper* Wrapper = (FLuaObjectWrapper*)lua_touserdata(InL, 1);
+	UObject* Owner = (Wrapper && Wrapper->WrapperType == ELuaWrapperType::Object) ? Wrapper->GetObject() : nullptr;
+
+	FString ObjectPath = UTF8_TO_TCHAR(lua_tostring(InL, 2));
+
+	UObject* LoadedObj = LoadObject<UObject>(Owner ? Owner : ANY_PACKAGE, *ObjectPath);
+
+	if (UBlueprintCore* BPC = Cast<UBlueprintCore>(LoadedObj))
+	{
+		LoadedObj = BPC->GeneratedClass;
+	}
+
+	PushObject(InL, LoadedObj);
+	return 1;
+
+}
+
 
 int FLuaObjectWrapper::ObjectGC(lua_State* InL)
 {

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
+#include "UObject/WeakObjectPtr.h"
 #include "FastLuaDelegate.generated.h"
 
 struct lua_State;
@@ -67,4 +68,7 @@ protected:
 		static FName GetWrapperFunctionName() { return FName(TEXT("TestFunction")); }
 
 	virtual void ProcessEvent(UFunction* InFunction, void* Parms) override;
+
+	UPROPERTY()
+		TWeakObjectPtr<UObject> MyObj;
 };

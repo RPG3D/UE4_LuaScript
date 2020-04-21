@@ -98,7 +98,7 @@ int32 ULuaGeneratedStruct::GenerateStruct(lua_State* InL)
 		NewStruct = nullptr;
 	}
 	NewStruct = NewObject<ULuaGeneratedStruct>(GetTransientPackage(), *InStructName, RF_Public | RF_Standalone | RF_Transient);
-	NewStruct->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
+	//NewStruct->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
 	NewStruct->Bind();
 	NewStruct->StaticLink(true);
 	NewStruct->AddToRoot();

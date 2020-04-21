@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Containers/Ticker.h"
+#include "UObject/WeakObjectPtr.h"
 
 struct lua_State;
 
@@ -17,6 +18,8 @@ public:
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnLuaUnrealReset, lua_State*);
 
 	static FOnLuaUnrealReset OnLuaUnrealReset;
+
+	static TMap<UObject*, FastLuaUnrealWrapper*> LuaStateMap;
 
 public:
 
@@ -46,37 +49,16 @@ public:
 		return LuaStateName;
 	}
 
-	class UGameInstance* GetGameInstance() const
-	{
-		return CachedGameInstance;
-	}
-
-	void SetGameInstance(class UGameInstance* InGameInstance)
-	{
-		CachedGameInstance = InGameInstance;
-	}
-
-	//never call me from C++!
-	//call Unreal.RegisterTickFunction(function() print(1) end) in Lua code!
-	void SetLuaTickFunction(int32 InFunctionIndex);
-
-	int32 GetLuaTickFunction() const
-	{
-		return LuaTickFunctionIndex;
-	}
-
 protected:
-
-	//LUA needs to hold a long life time UObject, GameInstance may be a right one 
-	class UGameInstance* CachedGameInstance = nullptr;
 
 	lua_State* L = nullptr;
 
+	int32 InstanceIndex = 0;
+
+	FWeakObjectPtr CachedGameInstance = nullptr;
+
 	FTickerDelegate LuaTickerDelegate;
 	FDelegateHandle LuaTickerHandle;
-
-	//reference in registry table
-	int32 LuaTickFunctionIndex = 0;
 
 	bool bTickError = false;
 

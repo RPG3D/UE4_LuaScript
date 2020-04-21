@@ -104,7 +104,13 @@ static void CallLuaFunction(UObject* Context, FFrame& TheStack, RESULT_DECL)
 			int32 ParamsNum = 0;
 			FProperty* ReturnParam = nullptr;
 			//store param from UE script VM stack
-			FStructOnScope FuncTmpMem(TheStack.Node);
+			static const int32 FunctionParamDataSize = 1024;
+			uint8 FuncParam[FunctionParamDataSize];
+			FMemory::Memzero(FuncParam, FunctionParamDataSize);
+			if (TheStack.Node->GetPropertiesSize() > FunctionParamDataSize)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("UFunction parameter data size more than 512!"));
+			}
 			//push self
 			FLuaObjectWrapper::PushObject(LuaState, Context);
 			++ParamsNum;
@@ -113,7 +119,7 @@ static void CallLuaFunction(UObject* Context, FFrame& TheStack, RESULT_DECL)
 			{
 				//get function return Param
 				FProperty* CurrentParam = *It;
-				void* LocalValue = CurrentParam->ContainerPtrToValuePtr<void>(FuncTmpMem.GetStructMemory());
+				void* LocalValue = CurrentParam->ContainerPtrToValuePtr<void>(FuncParam);
 				TheStack.StepCompiledIn<FProperty>(LocalValue);
 				if (CurrentParam->HasAnyPropertyFlags(CPF_ReturnParm))
 				{
@@ -122,7 +128,7 @@ static void CallLuaFunction(UObject* Context, FFrame& TheStack, RESULT_DECL)
 				else
 				{
 					//set params for lua function
-					FastLuaHelper::PushProperty(LuaState, CurrentParam, FuncTmpMem.GetStructMemory(), 0);
+					FastLuaHelper::PushProperty(LuaState, CurrentParam, FuncParam, 0);
 					++ParamsNum;
 				}
 			}
@@ -137,7 +143,7 @@ static void CallLuaFunction(UObject* Context, FFrame& TheStack, RESULT_DECL)
 			if (ReturnParam)
 			{
 				//get function return Value, in common
-				FastLuaHelper::FetchProperty(LuaState, ReturnParam, FuncTmpMem.GetStructMemory(), -1);
+				FastLuaHelper::FetchProperty(LuaState, ReturnParam, FuncParam, -1);
 			}
 		}
 	}

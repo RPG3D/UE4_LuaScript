@@ -8,7 +8,6 @@
 
 void FLuaStructWrapper::InitWrapperMetatable(lua_State* InL)
 {
-	int32 MetatableIndexStruct = GetMetatableIndex();
 	static const luaL_Reg GlueFuncs[] =
 	{
 		{"__index", FLuaStructWrapper::IndexInStruct},
@@ -18,16 +17,14 @@ void FLuaStructWrapper::InitWrapperMetatable(lua_State* InL)
 		{nullptr, nullptr},
 	};
 
-	lua_rawgeti(InL, LUA_REGISTRYINDEX, MetatableIndexStruct);
-	if (lua_istable(InL, -1))
-	{
-		luaL_unref(InL, LUA_REGISTRYINDEX, MetatableIndexStruct);
-	}
-	lua_pop(InL, 1);
-
 	int32 tp = lua_gettop(InL);
-	luaL_newlib(InL, GlueFuncs);
-	lua_rawseti(InL, LUA_REGISTRYINDEX, MetatableIndexStruct);
+
+	if (!luaL_newmetatable(InL, GetMetatableName()))
+	{
+		return;
+	}
+
+	luaL_setfuncs(InL, GlueFuncs, 0);
 	lua_settop(InL, tp);
 }
 
@@ -80,8 +77,7 @@ void FLuaStructWrapper::PushStruct(lua_State* InL, const UScriptStruct* InStruct
 	}
 	//SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
 
-	lua_rawgeti(InL, LUA_REGISTRYINDEX, GetMetatableIndex());
-	lua_setmetatable(InL, -2);
+	luaL_setmetatable(InL, GetMetatableName());
 }
 
 int32 FLuaStructWrapper::IndexInStruct(lua_State* InL)
