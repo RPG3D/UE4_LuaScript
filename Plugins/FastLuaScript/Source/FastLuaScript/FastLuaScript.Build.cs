@@ -25,7 +25,7 @@ public class FastLuaScript : ModuleRules
                 "InputCore",
 
 				// ... add other public dependencies that you statically link with here ...
-                "Lua"
+                "Lua54"
             }
 			);
 
