@@ -12,8 +12,8 @@ DECLARE_STATS_GROUP(TEXT("FastLuaScript"), STATGROUP_FastLuaScript, STATCAT_Adva
 DECLARE_CYCLE_STAT_EXTERN(TEXT("PushToLua"), STAT_PushToLua, STATGROUP_FastLuaScript, );
 DECLARE_CYCLE_STAT_EXTERN(TEXT("FetchFromLua"), STAT_FetchFromLua, STATGROUP_FastLuaScript, );
 
-DECLARE_CYCLE_STAT_EXTERN(TEXT("FindClassMetatable"), STAT_FindClassMetatable, STATGROUP_FastLuaScript, );
-DECLARE_CYCLE_STAT_EXTERN(TEXT("FindStructMetatable"), STAT_FindStructMetatable, STATGROUP_FastLuaScript, );
+
+DECLARE_CYCLE_STAT_EXTERN(TEXT("CallUnrealFunction"), STAT_CallUnrealFunction, STATGROUP_FastLuaScript, );
 
 DECLARE_CYCLE_STAT_EXTERN(TEXT("DelegateCallLua"), STAT_DelegateCallLua, STATGROUP_FastLuaScript, );
 

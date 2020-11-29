@@ -23,13 +23,12 @@ public class FastLuaScript : ModuleRules
                 "Engine",
                 "UMG",
                 "InputCore",
-
-				// ... add other public dependencies that you statically link with here ...
-                "Lua54"
-            }
+				"Lua",
+			}
 			);
 
-		PrivateDependencyModuleNames.AddRange(
+
+        PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
 				"CoreUObject",
@@ -39,9 +38,13 @@ public class FastLuaScript : ModuleRules
 				// ... add private dependencies that you statically link with here ...
             }
 			);
-		
-		
-		DynamicallyLoadedModuleNames.AddRange(
+
+        if (Target.Type == TargetType.Editor)
+        {
+            PublicDependencyModuleNames.AddRange(new string[] { "UnrealEd", "EditorStyle" });
+        }
+
+        DynamicallyLoadedModuleNames.AddRange(
 			new string[]
 			{
 				// ... add any modules that your module loads dynamically here ...

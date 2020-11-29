@@ -15,7 +15,7 @@ public class UE4_LuaScript : ModuleRules
         PublicDefinitions.Add(MacroDef);
 
         PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", 
-			"InputCore", "Lua54", "FastLuaScript",
+			"InputCore", "Lua", "FastLuaScript",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {

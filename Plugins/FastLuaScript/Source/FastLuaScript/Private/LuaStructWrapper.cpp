@@ -4,42 +4,25 @@
 #include "LuaStructWrapper.h"
 #include "FastLuaUnrealWrapper.h"
 #include "FastLuaHelper.h"
-#include "lua/lua.hpp"
+#include <LuaObjectWrapper.h>
 
-void FLuaStructWrapper::InitWrapperMetatable(lua_State* InL)
-{
-	static const luaL_Reg GlueFuncs[] =
-	{
-		{"__index", FLuaStructWrapper::IndexInStruct},
-		{"__newindex", FLuaStructWrapper::NewIndexInStruct},
-		{"__gc", FLuaStructWrapper::StructGC},
-		{"__tostring", FLuaStructWrapper::StructToString},
-		{nullptr, nullptr},
-	};
+#include "lua.hpp"
+#include "FastLuaStat.h"
 
-	int32 tp = lua_gettop(InL);
 
-	if (!luaL_newmetatable(InL, GetMetatableName()))
-	{
-		return;
-	}
-
-	luaL_setfuncs(InL, GlueFuncs, 0);
-	lua_settop(InL, tp);
-}
-
-void* FLuaStructWrapper::FetchStruct(lua_State* InL, int32 InIndex, int32 InDesiredSize)
+void* FLuaStructWrapper::FetchStruct(lua_State* InL, int32 InIndex, const UScriptStruct* InStruct)
 {
 	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, InIndex);
-	if (Wrapper && Wrapper->WrapperType == ELuaWrapperType::Struct && Wrapper->StructType->GetStructureSize() >= InDesiredSize)
+	if (Wrapper && Wrapper->WrapperType == ELuaWrapperType::Struct && Wrapper->StructType == InStruct)
 	{
-		return Wrapper->StructInst;
+		uint8* ValuePtr = ((uint8*)Wrapper) + sizeof(FLuaStructWrapper);
+		return ValuePtr;
 	}
 
 	return nullptr;
 }
 
-void FLuaStructWrapper::PushStruct(lua_State* InL, const UScriptStruct* InStruct, const void* InBuff)
+void FLuaStructWrapper::PushStruct(lua_State* InL, UScriptStruct* InStruct, const void* InBuff)
 {
 	if (InStruct == nullptr)
 	{
@@ -47,89 +30,52 @@ void FLuaStructWrapper::PushStruct(lua_State* InL, const UScriptStruct* InStruct
 		return;
 	}
 
-	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper));
+
+	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_newuserdata(InL, sizeof(FLuaStructWrapper) + InStruct->GetStructureSize());
 	new(Wrapper) FLuaStructWrapper(InStruct);
 
-	UScriptStruct::ICppStructOps* TheCppStructOps = InStruct->GetCppStructOps();
-	int32 AlignSize = 0;
-	if (TheCppStructOps)
-	{
-		AlignSize = TheCppStructOps->GetAlignment();
-	}
-	Wrapper->StructInst = (uint8*)FMemory::Malloc(InStruct->GetStructureSize(), AlignSize);
-	InStruct->InitializeDefaultValue(Wrapper->StructInst);
-
+	uint8* ValuePtr = ((uint8*)Wrapper) + sizeof(FLuaStructWrapper);
 	if (InBuff != nullptr)
 	{
-		InStruct->CopyScriptStruct(Wrapper->StructInst, InBuff);
+		InStruct->CopyScriptStruct(ValuePtr, InBuff);
 	}
-	else if (lua_istable(InL, 2))
+	else 
 	{
-		int32 tp = lua_gettop(InL);
-		for (TFieldIterator<FProperty> It(InStruct); It; ++It)
+		InStruct->InitializeDefaultValue(ValuePtr);
+	}
+
+	if (lua_rawgetp(InL, LUA_REGISTRYINDEX, InStruct) == LUA_TTABLE)
+	{
+		lua_setmetatable(InL, -2);
+	}
+	else
+	{
+		lua_pop(InL, 1);
+		RegisterStruct(InL, InStruct);
+		if (lua_rawgetp(InL, LUA_REGISTRYINDEX, InStruct) == LUA_TTABLE)
 		{
-			FProperty* Prop = *It;
-			lua_getfield(InL, 2, TCHAR_TO_UTF8(*It->GetName()));
-			FastLuaHelper::FetchProperty(InL, Prop, Wrapper->StructInst, -1, 0);
+			lua_setmetatable(InL, -2);
+		}
+		else
+		{
 			lua_pop(InL, 1);
 		}
-		lua_settop(InL, tp);
 	}
-	//SCOPE_CYCLE_COUNTER(STAT_FindStructMetatable);
-
-	luaL_setmetatable(InL, GetMetatableName());
 }
 
-int32 FLuaStructWrapper::IndexInStruct(lua_State* InL)
+int32 FLuaStructWrapper::StructNew(lua_State* InL)
 {
-	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, 1);
-	if (Wrapper == nullptr || Wrapper->WrapperType != ELuaWrapperType::Struct)
+	UScriptStruct* StructClass = (UScriptStruct*)lua_touserdata(InL, lua_upvalueindex(1));
+	if (StructClass == nullptr)
 	{
 		return 0;
 	}
-
-	FString TmpName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
-	FProperty* TmpProp = Wrapper->StructType->FindPropertyByName(*TmpName);
-	if (TmpProp == nullptr)
-	{
-		return 0;
-	}
-
-	FastLuaHelper::PushProperty(InL, TmpProp, Wrapper->StructInst);
-
-	return 1;
-}
-
-int32 FLuaStructWrapper::NewIndexInStruct(lua_State* InL)
-{
-	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, 1);
-	if (Wrapper == nullptr || Wrapper->WrapperType != ELuaWrapperType::Struct)
-	{
-		return 0;
-	}
-
-	FString TmpName = UTF8_TO_TCHAR(lua_tostring(InL, 2));
-	FProperty* TmpProp = Wrapper->StructType->FindPropertyByName(*TmpName);
-	if (TmpProp == nullptr)
-	{
-		return 0;
-	}
-
-	FastLuaHelper::FetchProperty(InL, TmpProp, Wrapper->StructInst, 3);
-
-	return 0;
-}
-
-int FLuaStructWrapper::LuaNewStruct(lua_State* InL)
-{
-	FString StructName = UTF8_TO_TCHAR(lua_tostring(InL, 1));
-	UScriptStruct* StructClass = FindObject<UScriptStruct>(ANY_PACKAGE, *StructName);
 	PushStruct(InL, StructClass, nullptr);
 
 	return 1;
 }
 
-int FLuaStructWrapper::StructGC(lua_State* InL)
+int32 FLuaStructWrapper::StructGC(lua_State* InL)
 {
 	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, -1);
 
@@ -153,4 +99,130 @@ int32 FLuaStructWrapper::StructToString(lua_State* InL)
 	FString ObjName = Wrapper->StructType->GetName();
 	lua_pushstring(InL, TCHAR_TO_UTF8(*ObjName));
 	return 1;
+}
+
+bool FLuaStructWrapper::RegisterStruct(lua_State* InL, UScriptStruct* InStruct)
+{
+	bool bResult = false;
+	if (InL == nullptr || InStruct == nullptr)
+	{
+		return false;
+	}
+
+	int32 ValueType = lua_rawgetp(InL, LUA_REGISTRYINDEX, InStruct);
+	lua_pop(InL, 1);
+	if (ValueType == LUA_TTABLE)
+	{
+
+		return true;
+	}
+
+	int32 tp = lua_gettop(InL);
+
+	UScriptStruct* SuperClass = (UScriptStruct*)InStruct->GetSuperStruct();
+	if (SuperClass)
+	{
+		RegisterStruct(InL, SuperClass);
+	}
+
+	lua_newtable(InL);
+	{
+		lua_pushvalue(InL, -1);
+		lua_rawsetp(InL, LUA_REGISTRYINDEX, InStruct);
+
+		lua_pushvalue(InL, -1);
+		lua_setfield(InL, -2, "__index");
+
+		lua_pushcfunction(InL, FLuaStructWrapper::StructToString);
+		lua_setfield(InL, -2, "__tostring");
+
+		lua_pushlightuserdata(InL, InStruct);
+		lua_pushcclosure(InL, FLuaStructWrapper::StructNew, 1);
+		lua_setfield(InL, -2, "__call");
+
+		if ((InStruct->StructFlags & (EStructFlags::STRUCT_IsPlainOldData | EStructFlags::STRUCT_NoDestructor)) == 0)
+		{
+			lua_pushcfunction(InL, FLuaStructWrapper::StructGC);
+			lua_setfield(InL, -2, "__gc");
+		}
+
+		if (lua_rawgetp(InL, LUA_REGISTRYINDEX, SuperClass) == LUA_TTABLE)
+		{
+			lua_setmetatable(InL, -2);
+		}
+		else
+		{
+			lua_pop(InL, 1);
+		}
+	}
+
+	for (TFieldIterator<FProperty>It(InStruct, EFieldIteratorFlags::ExcludeSuper); It; ++It)
+	{
+		FString PropName = It->GetName();
+
+		FString GetPropName = FString("Get") + PropName;
+		{
+			lua_pushlightuserdata(InL, *It);
+			lua_pushcclosure(InL, FLuaStructWrapper::StructIndex, 1);
+			lua_setfield(InL, -2, TCHAR_TO_UTF8(*GetPropName));
+		}
+
+		FString SetPropName = FString("Set") + PropName;
+		{
+			lua_pushlightuserdata(InL, *It);
+			lua_pushcclosure(InL, FLuaStructWrapper::StructNewIndex, 1);
+			lua_setfield(InL, -2, TCHAR_TO_UTF8(*SetPropName));
+		}
+	}
+
+	lua_settop(InL, tp);
+
+	return bResult;
+}
+
+
+int FLuaStructWrapper::StructIndex(lua_State* InL)
+{
+	SCOPE_CYCLE_COUNTER(STAT_PushToLua);
+	FProperty* Prop = (FProperty*)lua_touserdata(InL, lua_upvalueindex(1));
+	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, 1);
+
+	void* StructAddr = nullptr;
+	if (Wrapper && Wrapper->WrapperType == ELuaWrapperType::Struct)
+	{
+		uint8* ValuePtr = ((uint8*)Wrapper) + sizeof(FLuaStructWrapper);
+		StructAddr = ValuePtr;
+	}
+
+	if (StructAddr)
+	{
+		FastLuaHelper::PushProperty(InL, Prop, StructAddr);
+	}
+	else
+	{
+		lua_pushnil(InL);
+	}
+
+	return 1;
+}
+
+int FLuaStructWrapper::StructNewIndex(lua_State* InL)
+{
+	SCOPE_CYCLE_COUNTER(STAT_FetchFromLua);
+	FProperty* Prop = (FProperty*)lua_touserdata(InL, lua_upvalueindex(1));
+	FLuaStructWrapper* Wrapper = (FLuaStructWrapper*)lua_touserdata(InL, 1);
+
+	void* StructAddr = nullptr;
+	if (Wrapper && Wrapper->WrapperType == ELuaWrapperType::Struct)
+	{
+		uint8* ValuePtr = ((uint8*)Wrapper) + sizeof(FLuaStructWrapper);
+		StructAddr = ValuePtr;
+	}
+
+	if (StructAddr)
+	{
+		FastLuaHelper::FetchProperty(InL, Prop, StructAddr, 2);
+	}
+
+	return 0;
 }

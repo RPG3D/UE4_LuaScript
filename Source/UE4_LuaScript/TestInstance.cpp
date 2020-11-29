@@ -5,9 +5,6 @@
 #include "UObjectGlobals.h"
 #include "FastLuaUnrealWrapper.h"
 
-#if LUA_CODE_GENERATED
-#include "GeneratedLua/FastLuaAPI.h"
-#endif
 
 void UTestInstance::Init()
 {
@@ -34,16 +31,10 @@ void UTestInstance::RunGameScript()
 {
 	if (LuaWrapper.IsValid() == false)
 	{
-		LuaWrapper = FastLuaUnrealWrapper::Create(this);
+		LuaWrapper = FastLuaUnrealWrapper::GetDefault(this);
 	}
 
-#if LUA_CODE_GENERATED
-	FastLuaAPI::RegisterUnrealClass(LuaWrapper->GetLuaSate());
-	FastLuaAPI::RegisterUnrealStruct(LuaWrapper->GetLuaSate());
-	
-#endif
-
-	LuaWrapper->RunMainFunction();
+	LuaWrapper->RunMainFunction(this);
 }
 
 bool UTestInstance::RunLuaCode(const FString& InCode)

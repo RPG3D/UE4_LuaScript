@@ -22,11 +22,6 @@
 			"AdditionalDependencies": [
 				"Lua"
 			]
-		},
-		{
-			"Name": "XQCodeGenerator",
-			"Type": "Editor",
-			"LoadingPhase": "PostEngineInit"
 		}
 	]
 	

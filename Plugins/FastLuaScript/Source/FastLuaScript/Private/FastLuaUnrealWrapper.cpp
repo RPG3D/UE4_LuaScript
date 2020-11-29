@@ -1,7 +1,7 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "FastLuaUnrealWrapper.h"
-#include "lua/lua.hpp"
+
 #include "Engine/GameInstance.h"
 #include "UObject/UObjectIterator.h"
 #include "Misc/Paths.h"
@@ -9,20 +9,17 @@
 #include "UObject/StructOnScope.h"
 #include "FastLuaHelper.h"
 #include "FastLuaStat.h"
-
-//#include "LuaGeneratedEnum.h"
-//#include "LuaGeneratedStruct.h"
-//#include "LuaGeneratedClass.h"
+#include "FastLuaScript.h"
 
 #include "LuaDelegateWrapper.h"
 #include "LuaObjectWrapper.h"
-#include "LuaStructWrapper.h"
-#include "LuaLatentActionWrapper.h"
 
 
-FastLuaUnrealWrapper::FOnLuaUnrealReset FastLuaUnrealWrapper::OnLuaUnrealReset;
+#include "lua.hpp"
 
-TMap<UObject*, FastLuaUnrealWrapper*> FastLuaUnrealWrapper::LuaStateMap;
+
+FastLuaUnrealWrapper::FOnLuaEventNoParam FastLuaUnrealWrapper::OnLuaUnrealReset;
+FastLuaUnrealWrapper::FOnLuaEventNoParam FastLuaUnrealWrapper::OnLuaLoadThirdPartyLib;
 
 static int StopNewIndex(lua_State* InL)
 {
@@ -36,18 +33,7 @@ static int InitUnrealLib(lua_State* InL)
 	{
 
 		{"LuaLoadObject", FLuaObjectWrapper::LuaLoadObject},
-		{"LuaLoadClass", FLuaObjectWrapper::LuaLoadClass},
 		{"LuaGetUnrealCDO", FLuaObjectWrapper::LuaGetUnrealCDO},
-		{"LuaNewObject", FLuaObjectWrapper::LuaNewObject},
-		{"LuaNewStruct", FLuaStructWrapper::LuaNewStruct},
-
-		{"LuaNewDelegate", FLuaDelegateWrapper::LuaNewDelegate},
-
-		{"LuaHookUFunction", FastLuaHelper::HookUFunction},
-
-		/*{"LuaGenerateEnum", ULuaGeneratedEnum::GenerateEnum},
-		{"LuaGenerateStruct", ULuaGeneratedStruct::GenerateStruct},
-		{"LuaGenerateClass", ULuaGeneratedClass::GenerateClass},*/
 
 		{"PrintLog", FastLuaHelper::PrintLog},
 
@@ -76,12 +62,20 @@ static int RequireFromUFS(lua_State* InL)
 
 	FileName.ReplaceInline(*FString("."), *FString("/"));
 
-
-	lua_getglobal(InL, "package");
-	lua_getfield(InL, -1, "path");
-	FString LuaSearchPath = UTF8_TO_TCHAR(lua_tostring(InL, -1));
 	TArray<FString> PathList;
-	LuaSearchPath.ParseIntoArray(PathList, TEXT(";"));
+	{
+		FString LuaPath = FPaths::ProjectDir() / FString("Content/LuaScript/?.lua");
+		PathList.Add(LuaPath);
+#if PLATFORM_WINDOWS
+		FString LuaPath2 = FPaths::ProjectDir() / FString("Content/LuaScript/?.dll");
+		PathList.Add(LuaPath2);
+#else
+		FString LuaPath2 = FPaths::ProjectDir() / FString("Content/LuaScript/?.so");
+		PathList.Add(LuaPath2);
+#endif
+	}
+
+	IPlatformFile& PhysicalPlatformFile = IPlatformFile::GetPlatformPhysical();
 
 	for (int32 i = 0; i < PathList.Num(); ++i)
 	{
@@ -90,17 +84,17 @@ static int RequireFromUFS(lua_State* InL)
 
 		FPaths::NormalizeFilename(FullFilePath);
 
-		IPlatformFile* PlatformFile = nullptr;
-		IFileHandle* LuaFile = nullptr;
+		IFileHandle* LuaFile = PhysicalPlatformFile.OpenRead(*FullFilePath, false);
 
-		PlatformFile = FPlatformFileManager::Get().GetPlatformFile().GetLowerLevel();
-		LuaFile = PlatformFile ? PlatformFile->OpenRead(*FullFilePath) : nullptr;
-
-		if (PlatformFile == nullptr || LuaFile == nullptr)
+		if (LuaFile)
 		{
-			PlatformFile = &(FPlatformFileManager::Get().GetPlatformFile());
-			LuaFile = PlatformFile->OpenRead(*FullFilePath);
+			UE_LOG(LogFastLuaScript, Log, TEXT("RequireFromUFS|Physical:%s"), *FileName);
 		}
+		else
+		{
+			LuaFile = FPlatformFileManager::Get().GetPlatformFile().OpenRead(*FullFilePath, false);
+		}
+
 		
 		if (LuaFile)
 		{
@@ -136,17 +130,17 @@ static int RequireFromUFS(lua_State* InL)
 	}
 
 	FString MessageToPush = FString("RequireFromUFS failed: ") + FileName;
-	luaL_traceback(InL, InL, TCHAR_TO_UTF8(*MessageToPush), 1);
+	UE_LOG(LogTemp, Warning, TEXT("%s"), *MessageToPush);
 
-	UE_LOG(LogTemp, Warning, TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(InL, -1)));
+	//luaL_traceback(InL, InL, TCHAR_TO_UTF8(*MessageToPush), 1);
+	//UE_LOG(LogTemp, Warning, TEXT("%s"), UTF8_TO_TCHAR(lua_tostring(InL, -1)));
 	return 0;
 }
 
 
 FastLuaUnrealWrapper::FastLuaUnrealWrapper()
 {
-	static int32 TmpIdx = 0;
-	InstanceIndex = TmpIdx++;
+
 }
 
 FastLuaUnrealWrapper::~FastLuaUnrealWrapper()
@@ -154,57 +148,38 @@ FastLuaUnrealWrapper::~FastLuaUnrealWrapper()
 	Reset();
 }
 
-TSharedPtr<FastLuaUnrealWrapper> FastLuaUnrealWrapper::Create(class UGameInstance* InGameInstance, const FString& InName)
+TSharedPtr<FastLuaUnrealWrapper> FastLuaUnrealWrapper::GetDefault(const UGameInstance* InGameInstnce)
 {
-	TSharedPtr<FastLuaUnrealWrapper> Inst(new FastLuaUnrealWrapper());
-	if (InName.Len())
+	static TSharedPtr<FastLuaUnrealWrapper> Inst = nullptr;
+	if (Inst.IsValid() == false)
 	{
-		Inst->LuaStateName = InName;
+		Inst = MakeShareable((new FastLuaUnrealWrapper()));
 	}
 
-	Inst->Init(InGameInstance);
-
-	if (InGameInstance)
+	if (Inst->GetLuaState() == nullptr)
 	{
-		Inst->CachedGameInstance = InGameInstance;
-		LuaStateMap.Add(InGameInstance, Inst.Get());
+		Inst->Init();
 	}
 
 	return Inst;
 }
 
-void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
+void FastLuaUnrealWrapper::Init()
 {
 	if (L != nullptr)
 	{
 		return;
 	}
 
+
 	L = luaL_newstate();
 	luaL_openlibs(L);
 
-	FLuaObjectWrapper::PushObject(L, InGameInstance);
-	lua_setglobal(L, "GameInstance");
-
 	luaL_requiref(L, "Unreal", InitUnrealLib, 1);
 
-	FLuaObjectWrapper::InitWrapperMetatable(L);
-	FLuaStructWrapper::InitWrapperMetatable(L);
 	FLuaDelegateWrapper::InitWrapperMetatable(L);
 
-	//set package path
-	{
-		FString LuaEnvPath;
-
-		LuaEnvPath += FPaths::ProjectDir() / FString("LuaScript/?.lua") + FString(";") + FPaths::ProjectDir() / FString("LuaScript/?/Init.lua;");
-		LuaEnvPath += FPaths::ProjectContentDir() / FString("LuaScript/?.lua") + FString(";") + FPaths::ProjectContentDir() / FString("LuaScript/?/Init.lua;");
-		
-		lua_getglobal(L, "package");
-		FString RetString = UTF8_TO_TCHAR(lua_pushstring(L, TCHAR_TO_UTF8(*LuaEnvPath)));
-		lua_setfield(L, -2, "path");
-		lua_pop(L, 1);
-	}
-	//set searcher
+	//add searcher
 	{
 		int32 tp = lua_gettop(L);
 		int32 ret = lua_getglobal(L, "package");
@@ -214,13 +189,13 @@ void FastLuaUnrealWrapper::Init(UGameInstance* InGameInstance)
 		lua_rawseti(L, -2, FunctionNum + 1);
 		lua_settop(L, tp);
 	}
+
+	OnLuaLoadThirdPartyLib.Broadcast(L);
 }
 
 void FastLuaUnrealWrapper::Reset()
 {
 	OnLuaUnrealReset.Broadcast(L);
-
-	LuaStateMap.Remove(CachedGameInstance.Get());
 
 	if (LuaTickerHandle.IsValid())
 	{
@@ -243,7 +218,8 @@ bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 	if (!bTickError && L)
 	{
 		int32 tp = lua_gettop(L);
-		int32 ret = lua_getglobal(L, "LuaTick");
+		int32 ret = lua_getglobal(L, ProgramTableName);
+		ret = ret == LUA_TTABLE ? lua_getfield(L, -1, "LuaTick") : LUA_TNIL;
 		if (lua_isfunction(L, -1))
 		{
 			lua_pushnumber(L, InDeltaTime);
@@ -263,20 +239,31 @@ bool FastLuaUnrealWrapper::HandleLuaTick(float InDeltaTime)
 	return true;
 }
 
-int32 FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString("ApplicationMain")*/)
+int32 FastLuaUnrealWrapper::RunMainFunction(UGameInstance* InGameInstance)
 {
 	//load entry lua
-	FString LoadMainScript = FString::Printf(TEXT("require('%s')"), *InMainFile);
-	int32 Ret = luaL_dostring(GetLuaSate(), TCHAR_TO_UTF8(*LoadMainScript));
-	if (Ret > 0)
+	lua_getglobal(L, "require");
+	lua_pushstring(L, ProgramTableName);
+	int32 Ret = lua_pcall(L, 1, 1, 0);
+	if (Ret != LUA_OK || !lua_istable(L, -1))
 	{
 		FString RetString = UTF8_TO_TCHAR(lua_tostring(L, -1));
 		UE_LOG(LogTemp, Warning, TEXT("%s"), *RetString);
+		return Ret;
 	}
-	//run Main
-	Ret = lua_getglobal(L, "Main");
-	Ret = lua_pcall(L, 0, 0, 0);
-	if (Ret > 0)
+	//run Program.Main
+	Ret = lua_getfield(L, -1, "Main");
+	if (lua_isfunction(L, -1))
+	{
+		FLuaObjectWrapper::PushObject(L, InGameInstance);
+		Ret = lua_pcall(L, 1, 0, 0);
+	}
+	else
+	{
+		Ret = LUA_ERRRUN;
+	}
+
+	if (Ret != LUA_OK)
 	{
 		FString RetString = UTF8_TO_TCHAR(lua_tostring(L, -1));
 		UE_LOG(LogTemp, Warning, TEXT("%s"), *RetString);
@@ -292,6 +279,6 @@ int32 FastLuaUnrealWrapper::RunMainFunction(const FString& InMainFile /*=FString
 
 FString FastLuaUnrealWrapper::DoLuaCode(const FString& InCode)
 {
-	luaL_dostring(GetLuaSate(), TCHAR_TO_UTF8(*InCode));
+	luaL_dostring(GetLuaState(), TCHAR_TO_UTF8(*InCode));
 	return UTF8_TO_TCHAR(lua_tostring(L, -1));
 }

@@ -19,31 +19,23 @@ public:
 
 	~FLuaStructWrapper()
 	{
-		if (StructInst)
-		{
-			StructType->DestroyStruct(StructInst);
-			FMemory::Free(StructInst);
-			StructInst = nullptr;
-			StructType = nullptr;
-		}
+		uint8* ValuePtr = ((uint8*)this) + sizeof(FLuaStructWrapper);
+		StructType->DestroyStruct(ValuePtr);
+		StructType = nullptr;
 	}
 
-	static void InitWrapperMetatable(lua_State* InL);
+	static void* FetchStruct(lua_State* InL, int32 InIndex, const UScriptStruct* InStruct);
+	static void PushStruct(lua_State* InL, UScriptStruct* InStruct, const void* InBuff);
 
-	static char* GetMetatableName()
-	{
-		return "StructWrapper";
-	}
-
-	static void* FetchStruct(lua_State* InL, int32 InIndex, int32 InDesiredSize);
-	static void PushStruct(lua_State* InL, const UScriptStruct* InStruct, const void* InBuff);
-
-	static int32 IndexInStruct(lua_State* InL);
-	static int32 NewIndexInStruct(lua_State* InL);
-	static int LuaNewStruct(lua_State* InL);
-	static int StructGC(lua_State* InL);
+	static int32 StructNew(lua_State* InL);
+	static int32 StructGC(lua_State* InL);
 
 	static int32 StructToString(lua_State* InL);
+
+	static bool RegisterStruct(lua_State* InL, UScriptStruct* InStruct);
+
+	static int StructIndex(lua_State* InL);
+	static int StructNewIndex(lua_State* InL);
 
 	const ELuaWrapperType WrapperType = ELuaWrapperType::Struct;
 
@@ -52,6 +44,4 @@ protected:
 	friend class FastLuaHelper;
 
 	const UScriptStruct* StructType = nullptr;
-	//just a memory address flag
-	uint8* StructInst = nullptr;
 };

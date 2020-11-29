@@ -7,6 +7,7 @@
 #include "UObject/WeakObjectPtr.h"
 
 struct lua_State;
+class UGameInstance;
 
 /**
  * this is the Entry class for the plugin
@@ -15,15 +16,14 @@ class FASTLUASCRIPT_API FastLuaUnrealWrapper
 {
 public:
 
-	DECLARE_MULTICAST_DELEGATE_OneParam(FOnLuaUnrealReset, lua_State*);
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnLuaEventNoParam, lua_State*);
 
-	static FOnLuaUnrealReset OnLuaUnrealReset;
 
-	static TMap<UObject*, FastLuaUnrealWrapper*> LuaStateMap;
+	static FOnLuaEventNoParam OnLuaUnrealReset;
+
+	static FOnLuaEventNoParam OnLuaLoadThirdPartyLib;
 
 public:
-
-	FString LuaStateName = FString("Unknown");
 
 	bool bStatMemory = true;
 	int32 LuaMemory = 0;
@@ -31,36 +31,28 @@ public:
 	~FastLuaUnrealWrapper();
 
 	//lua state run on server
-	static TSharedPtr<FastLuaUnrealWrapper> Create(class UGameInstance* InGameInstance = nullptr, const FString& InName = FString(""));
+	static TSharedPtr<FastLuaUnrealWrapper> GetDefault(const UGameInstance* InGameInstance = nullptr);
 
 	//re-live
-	void Init(class UGameInstance* InGameInstance = nullptr);
+	void Init();
 	void Reset();
 
-	lua_State* GetLuaSate() const { return L; }
+	lua_State* GetLuaState() const { return L; }
 
 	FString DoLuaCode(const FString& InCode);
-
 	
-	int32 RunMainFunction(const FString& InMainFile = FString("ApplicationMain"));
-
-	FString GetInstanceName() const
-	{
-		return LuaStateName;
-	}
+	int32 RunMainFunction(class UGameInstance* InGameInstance);
 
 protected:
 
 	lua_State* L = nullptr;
 
-	int32 InstanceIndex = 0;
-
-	FWeakObjectPtr CachedGameInstance = nullptr;
-
 	FTickerDelegate LuaTickerDelegate;
 	FDelegateHandle LuaTickerHandle;
 
 	bool bTickError = false;
+
+	const char* ProgramTableName = "Program";
 
 	FastLuaUnrealWrapper();
 	FastLuaUnrealWrapper(const FastLuaUnrealWrapper&) = delete;

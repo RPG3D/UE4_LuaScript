@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "ILuaWrapper.h"
-#include "FastLuaDelegate.h"
+
 
 class FDelegateProperty;
 
@@ -14,93 +14,44 @@ class FDelegateProperty;
 class FASTLUASCRIPT_API FLuaDelegateWrapper : public ILuaWrapper
 {
 public:
-	FLuaDelegateWrapper(class UFunction* InFunction, void* InDelegateAddr, bool InMulti)
-	{
-		//we only allow one LUA function bound with UE delegate!
-		//check whether the delegate already is bound with a proxy!
-		if (InDelegateAddr)
-		{
-			if (InMulti)
-			{
-				FMulticastScriptDelegate* MultiDelegate = (FMulticastScriptDelegate*)InDelegateAddr;
-				TArray<UObject*> ObjList = MultiDelegate->GetAllObjects();
-				for (int32 Idx = 0; Idx < ObjList.Num(); ++Idx)
-				{
-					DelegateObjectProxy = Cast<UFastLuaDelegate>(ObjList[Idx]);
-					if (DelegateObjectProxy)
-					{
-						break;
-					}
-				}
-			}
-			else
-			{
-				FScriptDelegate* SingleDelegate = (FScriptDelegate*)InDelegateAddr;
-				DelegateObjectProxy = Cast<UFastLuaDelegate>(SingleDelegate->GetUObject());
-			}
-		}
-		if (!DelegateObjectProxy)
-		{
-			DelegateObjectProxy = NewObject<UFastLuaDelegate>(GetTransientPackage());
-			DelegateObjectProxy->AddToRoot();
-			DelegateObjectProxy->FunctionSignature = InFunction;
-			DelegateObjectProxy->DelegateAddr = InDelegateAddr;
-			DelegateObjectProxy->bIsMulti = InMulti;
+	FLuaDelegateWrapper(class UFunction* InFunction, void* InDelegateAddr, bool InMulti);
 
-			if (!InDelegateAddr && InFunction)
-			{
-				DelegateObjectProxy->InitFromUFunction(InFunction);
-			}
-		}
-
-	}
-
-	~FLuaDelegateWrapper()
-	{
-		//only release if not bound! 
-		//make sure DelegateObjectProxy alive after wrapper destroy
-		if (!DelegateObjectProxy->IsBound())
-		{
-			DelegateObjectProxy->Unbind();
-			DelegateObjectProxy->RemoveFromRoot();
-			DelegateObjectProxy = nullptr;
-		}
-	}
+	~FLuaDelegateWrapper();
 
 	static void InitWrapperMetatable(lua_State* InL);
 
 	static char* GetMetatableName()
 	{
-		return "DelegateWrapper";
+		static char DelegateWrapper[] = "DelegateWrapper";
+		return DelegateWrapper;
 	}
 
-	void* GetDelegateValueAddr()
-	{
-		return DelegateObjectProxy->DelegateAddr;
-	}
+	void* GetDelegateValueAddr();
 
-	bool IsMulti() const
-	{
-		return DelegateObjectProxy->bIsMulti;
-	}
+	bool IsMulti() const;
 
 	static void PushDelegate(lua_State* InL, void* InValueAddr, bool InMulti, UFunction* InFunction);
 	static void* FetchDelegate(lua_State* InL, int32 InIndex, bool InIsMulti = true);
 
 
-	static int LuaNewDelegate(lua_State* InL);
-	static int LuaBindDelegate(lua_State* InL);
-	static int LuaUnbindDelegate(lua_State* InL);
-	static int LuaCallUnrealDelegate(lua_State* InL);
+	static int32 LuaNewDelegate(lua_State* InL);
+	static int32 LuaBindDelegate(lua_State* InL);
+	static int32 LuaUnbindDelegate(lua_State* InL);
+	static int32 LuaCallUnrealDelegate(lua_State* InL);
 
-	static int UserDelegateGC(lua_State* InL);
+	static int32 UserDelegateGC(lua_State* InL);
 
 	const ELuaWrapperType WrapperType = ELuaWrapperType::Delegate;
 
 protected:
 
-	friend class FastLuaHelper;
+	//the UFunction bound to this Delegate
+	const UFunction* FunctionSignature = nullptr;
 
-	UFastLuaDelegate* DelegateObjectProxy = nullptr;
+	//single delegate or multi delegate
+	bool bIsMulti = true;
+	//raw delegate
+	void* DelegateAddr = nullptr;
+	bool bIsUserCreated = false;
 
 };

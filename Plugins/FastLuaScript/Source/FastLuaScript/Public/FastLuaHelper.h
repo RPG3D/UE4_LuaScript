@@ -8,7 +8,6 @@
 struct lua_State;
 
 
-
 /**
  * 
  */
@@ -16,19 +15,10 @@ class FASTLUASCRIPT_API FastLuaHelper
 {
 public:
 
-	//get actual cpp type str. int32/float/TArray<AActor*>/TMap<int32, uint8>
-	static FString GetPropertyTypeName(const FProperty* InProp);
-
-	static void PushProperty(lua_State* InL, const FProperty* InProp, void* InBuff, int32 InArrayElementIndex = 0);
-	static void FetchProperty(lua_State* InL, const FProperty* InProp, void* InBuff, int32 InStackIndex, int32 InArrayElementIndex = 0);
+	static void PushProperty(lua_State* InL, const FProperty* InProp, void* InContainer, int32 InArrayElementIndex = 0);
+	static void FetchProperty(lua_State* InL, const FProperty* InProp, void* InContainer, int32 InStackIndex, int32 InArrayElementIndex = 0);
 
 	static int32 CallUnrealFunction(lua_State* L);
-
-	static void CallLuaFunction(UObject* Context, FFrame& TheStack, RESULT_DECL);
-
-	static int HookUFunction(lua_State* InL);
-
-	static void FixClassMetatable(lua_State* InL, TArray<const UClass*> InRegistedClassList);
 
 	static int PrintLog(lua_State* L);
 

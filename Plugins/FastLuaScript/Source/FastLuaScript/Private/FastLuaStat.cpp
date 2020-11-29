@@ -7,8 +7,7 @@
 DEFINE_STAT(STAT_PushToLua);
 DEFINE_STAT(STAT_FetchFromLua);
 
-DEFINE_STAT(STAT_FindClassMetatable);
-DEFINE_STAT(STAT_FindStructMetatable);
+DEFINE_STAT(STAT_CallUnrealFunction);
 
 DEFINE_STAT(STAT_DelegateCallLua);
 DEFINE_STAT(STAT_LuaTick);
