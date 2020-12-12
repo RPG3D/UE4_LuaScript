@@ -1,21 +1,11 @@
 # LuaScript
-Simple Is Power, both Runtime refelection & auto generate static bind code are supported!
-
+Simple Is Power, Call UE4 Function Via Runtime Refelection.
 note: add -FastLua to Visual Studio Command-Line, then F5, the static bind code will generated 
 
-note2: this is new version(Unreal 4.25); for 4.24, look at older branch:REL_4.24
-
-ignore generated code in version control!
-git example:
-
-    Source/UE4_LuaScript/GeneratedLua/*
-
-modify the /Config/ModuleToExport.txt to your engine/game modules
 
 ## about
-  LuaScript is unreal reflection based Lua API for UE4. All BlueprintCallable function & All UPROPERTY property & All Dynamic Delegate can be access in Lua.
   
-  some global function, you can find in FastLuaHelper.h; example:
+  some global function in FastLuaHelper.h; example:
   
     GameInstance = Unreal.LuaGetGameInstance()
     MyUIBPClass = Unreal.LuaLoadClass(GameInstance, "/Game/UI/DebugUI.DebugUI_C")
