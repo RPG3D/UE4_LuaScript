@@ -102,7 +102,7 @@ void ULuaFunctionWrapper::ProcessEvent(UFunction* InFunction, void* Parms)
 			else
 			{
 				//set params for lua function
-				FastLuaHelper::PushProperty(LuaState, CurrentParam, Parms, 0);
+				FastLuaHelper::PushProperty(LuaState, CurrentParam, Parms);
 				++ParamsNum;
 			}
 		}

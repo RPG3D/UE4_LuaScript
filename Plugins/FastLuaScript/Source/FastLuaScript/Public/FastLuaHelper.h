@@ -15,8 +15,8 @@ class FASTLUASCRIPT_API FastLuaHelper
 {
 public:
 
-	static void PushProperty(lua_State* InL, const FProperty* InProp, void* InContainer, int32 InArrayElementIndex = 0);
-	static void FetchProperty(lua_State* InL, const FProperty* InProp, void* InContainer, int32 InStackIndex, int32 InArrayElementIndex = 0);
+	static void PushProperty(lua_State* InL, const FProperty* InProp, void* InContainer);
+	static void FetchProperty(lua_State* InL, const FProperty* InProp, void* InContainer, int32 InStackIndex);
 
 	static int32 CallUnrealFunction(lua_State* L);
 

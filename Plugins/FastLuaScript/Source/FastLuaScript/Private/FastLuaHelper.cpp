@@ -21,7 +21,7 @@
 
 
 
-void FastLuaHelper::PushProperty(lua_State* InL, const FProperty* InProp, void* InContainer, int32 InArrayElementIndex)
+void FastLuaHelper::PushProperty(lua_State* InL, const FProperty* InProp, void* InContainer)
 {
 	SCOPE_CYCLE_COUNTER(STAT_PushToLua);
 
@@ -34,11 +34,11 @@ void FastLuaHelper::PushProperty(lua_State* InL, const FProperty* InProp, void* 
 	{
 		if (NumProp->IsInteger())
 		{
-			lua_pushinteger(InL, NumProp->GetSignedIntPropertyValue(NumProp->ContainerPtrToValuePtr<void>(InContainer, InArrayElementIndex)));
+			lua_pushinteger(InL, NumProp->GetSignedIntPropertyValue(NumProp->ContainerPtrToValuePtr<void>(InContainer)));
 		}
 		else
 		{
-			lua_pushnumber(InL, NumProp->GetFloatingPointPropertyValue(NumProp->ContainerPtrToValuePtr<void>(InContainer, InArrayElementIndex)));
+			lua_pushnumber(InL, NumProp->GetFloatingPointPropertyValue(NumProp->ContainerPtrToValuePtr<void>(InContainer)));
 		}
 	}
 	else if (const FEnumProperty * EnumProp = CastField<FEnumProperty>(InProp))
@@ -73,21 +73,21 @@ void FastLuaHelper::PushProperty(lua_State* InL, const FProperty* InProp, void* 
 	{
 		if (UScriptStruct * ScriptStruct = Cast<UScriptStruct>(StructProp->Struct))
 		{
-			FLuaStructWrapper::PushStruct(InL, ScriptStruct, StructProp->ContainerPtrToValuePtr<void>(InContainer, InArrayElementIndex));
+			FLuaStructWrapper::PushStruct(InL, ScriptStruct, StructProp->ContainerPtrToValuePtr<void>(InContainer));
 		}
 	}
 	else if (const FObjectProperty * ObjectProp = CastField<FObjectProperty>(InProp))
 	{
-		FLuaObjectWrapper::PushObject(InL, ObjectProp->GetObjectPropertyValue(ObjectProp->GetPropertyValuePtr_InContainer(InContainer, InArrayElementIndex)));
+		FLuaObjectWrapper::PushObject(InL, ObjectProp->GetObjectPropertyValue(ObjectProp->GetPropertyValuePtr_InContainer(InContainer)));
 	}
 	else if (const FDelegateProperty * DelegateProp = CastField<FDelegateProperty>(InProp))
 	{
-		void* ValuePtr = const_cast<TScriptDelegate<FWeakObjectPtr>*>(DelegateProp->GetPropertyValuePtr_InContainer(InContainer, InArrayElementIndex));
+		void* ValuePtr = const_cast<TScriptDelegate<FWeakObjectPtr>*>(DelegateProp->GetPropertyValuePtr_InContainer(InContainer));
 		FLuaDelegateWrapper::PushDelegate(InL, ValuePtr, false, DelegateProp->SignatureFunction);
 	}
 	else if (const FMulticastDelegateProperty * MultiDelegateProp = CastField<FMulticastDelegateProperty>(InProp))
 	{
-		void* ValuePtr = MultiDelegateProp->ContainerPtrToValuePtr<void>(InContainer, InArrayElementIndex);
+		void* ValuePtr = MultiDelegateProp->ContainerPtrToValuePtr<void>(InContainer);
 		FLuaDelegateWrapper::PushDelegate(InL, ValuePtr, true, MultiDelegateProp->SignatureFunction);
 	}
 	else if (const FArrayProperty * ArrayProp = CastField<FArrayProperty>(InProp))
@@ -124,7 +124,7 @@ void FastLuaHelper::PushProperty(lua_State* InL, const FProperty* InProp, void* 
 	}
 }
 
-void FastLuaHelper::FetchProperty(lua_State* InL, const FProperty* InProp, void* InContainer, int32 InStackIndex, int32 InArrayElementIndex)
+void FastLuaHelper::FetchProperty(lua_State* InL, const FProperty* InProp, void* InContainer, int32 InStackIndex)
 {
 	SCOPE_CYCLE_COUNTER(STAT_FetchFromLua);
 
